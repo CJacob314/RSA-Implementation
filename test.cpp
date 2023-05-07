@@ -9,13 +9,31 @@
 #include "src/RSA.h"
 
 int main(void){
-    // RSA rsa(3072);
-    RSA rsa(128);
+    std::cout << "Generating 4096-bit RSA keypair...\n";
+    RSA rsa(4096);
+    std::cout << "DONE. Enter a message to encrypt, terminating with EOF.\n";
+    
+    std::istreambuf_iterator<char> begin(std::cin), end;
+    std::string message(begin, end);
+    
+    RSA pubOnly(rsa.getPublicKey());
 
-    // rsa.testPrimeDetection(BigInt(32063));
-    // rsa.testPrimeDetection(BigInt(502507));
+    std::cout << "Encrypting inputted string with the public key...\n";
+    BigInt encrypted = pubOnly.encrypt(message);
 
-    // for(int i = 0; i < 2; i++){
-        // rsa.testPrimeGeneration(1024);
-    // }
+    std::cout << "ENCRYPTED MESSAGE BELOW...\n" << encrypted << "\nAttempting decrypt with public key only class (should FAIL)...\n";
+
+    try{
+        std::cout << pubOnly.decrypt(encrypted) << "\nNow decrypting with private key class...\n";
+    } catch(std::runtime_error& e){
+        std::cout << "Failed. Exception what():\t" << e.what() << "\n";
+    }
+
+    std::cout << "Now trying with the private key class...\n";
+
+    std::string decrypted = rsa.decrypt(encrypted);
+
+    std::cout << "DECRYPTED:\n\n" << decrypted << "\n";
+
+    return 0;
 }

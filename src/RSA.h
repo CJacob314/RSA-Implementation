@@ -2,6 +2,7 @@
 #define __RSA_H
 
 #include <boost/multiprecision/cpp_int.hpp>
+#include <string>
 typedef boost::multiprecision::cpp_int BigInt;
 
 #define EVEN(x) (!(x & 1))
@@ -41,6 +42,10 @@ class RSA{
     RSA(uint16_t newKeyLength);
     RSA(RsaKey privateKey, RsaKey publicKey);
     RSA(RsaKey publicKey);
+
+    BigInt encrypt(const char* message, uint64_t length);
+    BigInt encrypt(std::string message);
+    std::string decrypt(BigInt message);
 
     RsaKey getPrivateKey();
     RsaKey getPublicKey();

@@ -1,6 +1,27 @@
 #include "../RSA.h"
 #include "../Utilities.h"
 
+BigInt stringToBigInt(const char* message, uint64_t length){
+    BigInt messageInt = 0;
+    for(uint64_t i = 0; i < length; i++){
+        messageInt <<= 8;
+        messageInt |= message[i];
+    }
+
+    return messageInt;
+}
+
+std::string bigIntToString(BigInt message){
+    std::string messageString = "";
+    while(message > 0){
+        messageString = (char)(message & 0xFF) + messageString;
+        message >>= 8;
+    }
+
+    return messageString;
+}
+
+
 // Only works given a and m are coprime, which they almost CERTAINLY are given my implementation.
 // That is, unless I get VERY unlucky and my prime is a multiple of 65537.
 // Runs in O(log(m)) and uses O(1) space.
@@ -119,8 +140,17 @@ RSA::RSA(uint16_t newKeyLength){
     BigInt phi = (p - 1) * (q - 1);
     privateKey = modInv(e, phi);
 
-    std::cout << "p: " << p << "\nq: " << q << "\nphi(p*q): " 
-        << phi << "\nPublicKey(n=p*q): " << publicKey << "\nprivateKey: " << privateKey << "\n";
+    std::cout << "p: " << p << "\n\nq: " << q << "\n\nphi(p*q): " 
+        << phi << "\n\nPublicKey(n=p*q): " << publicKey << "\n\nprivateKey: " << privateKey << "\n";
+}
+
+RSA::RSA(RsaKey privateKey, RsaKey publicKey){
+    this->privateKey = privateKey;
+    this->publicKey = publicKey;    
+}
+
+RSA::RSA(RsaKey publicKey){
+    this->publicKey = publicKey;
 }
 
 void RSA::testLCG(){
@@ -141,4 +171,39 @@ void RSA::testPrimeGeneration(uint16_t keyLength){
     BigInt prime = this->generatePrime(keyLength);
 
     std::cout << prime << "\n";
+}
+
+BigInt RSA::encrypt(const char* message, uint64_t length){
+    if(!publicKey){
+        throw std::runtime_error("No public key!");
+        return 0;
+    }
+
+    BigInt messageInt = stringToBigInt(message, length);
+    BigInt encrypted = modExp(messageInt, e, publicKey);
+
+    return encrypted;
+}
+
+BigInt RSA::encrypt(std::string message){
+    return encrypt(message.c_str(), message.length());
+}
+
+std::string RSA::decrypt(BigInt message){
+    if(!privateKey){
+        throw std::runtime_error("No private key!");
+        return "";
+    }
+
+    BigInt decrypted = modExp(message, privateKey, publicKey);
+
+    return bigIntToString(decrypted);
+}
+
+RsaKey RSA::getPrivateKey(){
+    return privateKey;
+}
+
+RsaKey RSA::getPublicKey(){
+    return publicKey;
 }
