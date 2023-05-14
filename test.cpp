@@ -19,7 +19,7 @@ int main(void){
     RSA pubOnly(rsa.getPublicKey());
 
     std::cout << "Encrypting inputted string with the public key...\n";
-    BigInt encrypted = pubOnly.encrypt(message);
+    std::string encrypted = pubOnly.encrypt(message);
 
     std::cout << "ENCRYPTED MESSAGE BELOW...\n" << encrypted << "\nAttempting decrypt with public key only class (should FAIL)...\n";
 

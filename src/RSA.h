@@ -25,8 +25,8 @@ class RSA{
     bool __rabinMillerHelper(BigInt d, BigInt n);
     BigInt generatePrime(uint16_t keyLength);
 
-    static std::string toAsciiStr(BigInt n);
-    static BigInt fromAsciiStr(const std::string& str);
+    std::string toAsciiStr(BigInt n);
+    BigInt fromAsciiStr(const std::string& str);
 
     const BigInt e = BigInt(1) << 16 | 0x1;
 
@@ -51,9 +51,9 @@ class RSA{
     RSA(RsaKey privateKey, RsaKey publicKey);
     RSA(RsaKey publicKey);
 
-    BigInt encrypt(const char* message, uint64_t length);
-    BigInt encrypt(std::string message);
-    std::string decrypt(BigInt message);
+    std::string encrypt(const char* message, uint64_t length);
+    std::string encrypt(std::string message);
+    std::string decrypt(std::string message);
 
     RsaKey getPrivateKey();
     RsaKey getPublicKey();

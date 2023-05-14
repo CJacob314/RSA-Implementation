@@ -173,7 +173,7 @@ void RSA::testPrimeGeneration(uint16_t keyLength){
     std::cout << prime << "\n";
 }
 
-BigInt RSA::encrypt(const char* message, uint64_t length){
+std::string RSA::encrypt(const char* message, uint64_t length){
     if(!publicKey){
         throw std::runtime_error("No public key!");
         return 0;
@@ -192,20 +192,21 @@ BigInt RSA::encrypt(const char* message, uint64_t length){
     
     BigInt encrypted = modExp(messageInt, e, publicKey);
 
-    return encrypted;
+    return toAsciiStr(encrypted);
 }
 
-BigInt RSA::encrypt(std::string message){
+std::string RSA::encrypt(std::string message){
     return encrypt(message.c_str(), message.length());
 }
 
-std::string RSA::decrypt(BigInt message){
+std::string RSA::decrypt(std::string message){
     if(!privateKey){
         throw std::runtime_error("No private key!");
         return "";
     }
 
-    BigInt decrypted = modExp(message, privateKey, publicKey);
+    BigInt messageInt = fromAsciiStr(message);
+    BigInt decrypted = modExp(messageInt, privateKey, publicKey);
 
     return bigIntToString(decrypted);
 }
@@ -218,7 +219,7 @@ RsaKey RSA::getPublicKey(){
     return publicKey;
 }
 
-static std::string RSA::toAsciiStr(BigInt n){
+std::string RSA::toAsciiStr(BigInt n){
     std::stringstream builder;
 
 	for(char c = static_cast<char>(((uint8_t)n) & 0x0F) + 'A'; n; n >>= 4, c = static_cast<char>((((uint8_t)n) & 0x0F) + 'A')){
@@ -228,7 +229,7 @@ static std::string RSA::toAsciiStr(BigInt n){
 	return builder.str();
 }
 
-static BigInt RSA::fromAsciiStr(const std::string& str){
+BigInt RSA::fromAsciiStr(const std::string& str){
     BigInt result = 0;
     uint64_t shift = 0;
 
