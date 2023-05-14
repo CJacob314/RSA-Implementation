@@ -180,6 +180,16 @@ BigInt RSA::encrypt(const char* message, uint64_t length){
     }
 
     BigInt messageInt = stringToBigInt(message, length);
+    if(messageInt >= publicKey){
+        // TODO: Finish this!
+        // Chunk the message into encrypted chunks (with a separator, probably '-' since my ascii conversion functions do not ever generate that character)
+        uint64_t pubKeyBits = boost::multiprecision::msb(publicKey) + 1;
+        uint64_t messageBits = boost::multiprecision::msb(messageInt) + 1;
+
+
+    }
+
+    
     BigInt encrypted = modExp(messageInt, e, publicKey);
 
     return encrypted;
@@ -206,4 +216,26 @@ RsaKey RSA::getPrivateKey(){
 
 RsaKey RSA::getPublicKey(){
     return publicKey;
+}
+
+static std::string RSA::toAsciiStr(BigInt n){
+    std::stringstream builder;
+
+	for(char c = static_cast<char>(((uint8_t)n) & 0x0F) + 'A'; n; n >>= 4, c = static_cast<char>((((uint8_t)n) & 0x0F) + 'A')){
+		builder << c;
+	}
+
+	return builder.str();
+}
+
+static BigInt RSA::fromAsciiStr(const std::string& str){
+    BigInt result = 0;
+    uint64_t shift = 0;
+
+    for (const char& c : str) {
+        result |= (BigInt(c - 'A') << shift);
+        shift += 4;
+    }
+	
+    return result;
 }

@@ -2,7 +2,12 @@
 #define __RSA_H
 
 #include <boost/multiprecision/cpp_int.hpp>
+#include <boost/multiprecision/number.hpp>
+
 #include <string>
+#include <sstream>
+
+
 typedef boost::multiprecision::cpp_int BigInt;
 
 #define EVEN(x) (!(x & 1))
@@ -19,6 +24,9 @@ class RSA{
     bool rabinMillerIsPrime(const BigInt& n, uint64_t accuracy);
     bool __rabinMillerHelper(BigInt d, BigInt n);
     BigInt generatePrime(uint16_t keyLength);
+
+    static std::string toAsciiStr(BigInt n);
+    static BigInt fromAsciiStr(const std::string& str);
 
     const BigInt e = BigInt(1) << 16 | 0x1;
 
