@@ -133,66 +133,65 @@ BigInt RSA::BigLCG::next(){
 }
 
 RSA::RSA(uint16_t newKeyLength){
-    BigInt p = generatePrime(newKeyLength / 2);
-    BigInt q = generatePrime(newKeyLength / 2);
+    if(newKeyLength < 16){
+        throw std::runtime_error("Key length must be at least 16 bits!");
+        return;
+    }
+
+    BigInt p = generatePrime((newKeyLength >> 1) + (ODD(newKeyLength) ? 1 : 0)); // This only slightly raises the probability of hitting the correct bit-length on the nose. It will always be within 1, though.
+    BigInt q = generatePrime(newKeyLength >> 1);
     publicKey = p * q;
+
+    pubKeyBits = boost::multiprecision::msb(publicKey) + 1;
+    pubKeyBytes = (pubKeyBits < 8) ? 1 : pubKeyBits >> 3;
 
     BigInt phi = (p - 1) * (q - 1);
     privateKey = modInv(e, phi);
 
-    std::cout << "p: " << p << "\n\nq: " << q << "\n\nphi(p*q): " 
-        << phi << "\n\nPublicKey(n=p*q): " << publicKey << "\n\nprivateKey: " << privateKey << "\n";
+    #ifdef DEBUG_TESTING
+        std::cout << "p: " << p << "\n\nq: " << q << "\n\nphi(p*q): " 
+            << phi << "\n\nPublicKey(n=p*q): " << publicKey << "\n\nprivateKey: " << privateKey << "\n";
+    #endif
 }
 
 RSA::RSA(RsaKey privateKey, RsaKey publicKey){
     this->privateKey = privateKey;
-    this->publicKey = publicKey;    
+    this->publicKey = publicKey;
+
+    pubKeyBits = boost::multiprecision::msb(publicKey) + 1;
+    pubKeyBytes = pubKeyBits >> 3;
 }
 
 RSA::RSA(RsaKey publicKey){
     this->publicKey = publicKey;
-}
 
-void RSA::testLCG(){
-    for(int i = 0; i < 10000; i++){
-        std::cout << lcg.next() << "\n";
-    }
-}
-
-void RSA::testPrimeDetection(BigInt n){
-    if(this->rabinMillerIsPrime(n, 10)){
-        std::cout << n << " is probably prime!" << "\n";
-    } else {
-        std::cout << n << " is not prime!" << "\n";
-    }
-}
-
-void RSA::testPrimeGeneration(uint16_t keyLength){
-    BigInt prime = this->generatePrime(keyLength);
-
-    std::cout << prime << "\n";
+    pubKeyBits = boost::multiprecision::msb(publicKey) + 1;
+    pubKeyBytes = pubKeyBits >> 3;
 }
 
 std::string RSA::encrypt(const char* message, uint64_t length){
     if(!publicKey){
         throw std::runtime_error("No public key!");
-        return 0;
+        return 0; 
     }
 
-    BigInt messageInt = stringToBigInt(message, length);
-    if(messageInt >= publicKey){
-        // TODO: Finish this!
-        // Chunk the message into encrypted chunks (with a separator, probably '-' since my ascii conversion functions do not ever generate that character)
-        uint64_t pubKeyBits = boost::multiprecision::msb(publicKey) + 1;
-        uint64_t messageBits = boost::multiprecision::msb(messageInt) + 1;
+    if(length >= pubKeyBytes){
+        uint64_t chunkSize = pubKeyBits - 1;
+        uint64_t strChunkCharCnt = (chunkSize < 8) ? 1 : chunkSize >> 3;
+        uint64_t strChunkCnt = length / strChunkCharCnt + 1;
 
+        std::string encStr = "";
+        for(uint64_t i = 0; i < strChunkCnt; i++){
+            BigInt chunkEncrypted = modExp(stringToBigInt(message + (i * strChunkCharCnt),
+                std::min(strChunkCharCnt, length - (i * strChunkCharCnt))), e, publicKey);
+            encStr += toAsciiStr(chunkEncrypted) + "-";
+        }
 
+        return encStr;
     }
-
     
-    BigInt encrypted = modExp(messageInt, e, publicKey);
 
-    return toAsciiStr(encrypted);
+    return toAsciiStr(modExp(stringToBigInt(message, length), e, publicKey));
 }
 
 std::string RSA::encrypt(std::string message){
@@ -205,10 +204,29 @@ std::string RSA::decrypt(std::string message){
         return "";
     }
 
-    BigInt messageInt = fromAsciiStr(message);
-    BigInt decrypted = modExp(messageInt, privateKey, publicKey);
+    std::string decrypted = "";
+    std::string chunk = "";
 
-    return bigIntToString(decrypted);
+    // Assemble and decrypt the chunks
+    for(const char& c : message){
+        if(c == '-'){
+            BigInt chunkInt = fromAsciiStr(chunk);
+            BigInt decryptedChunk = modExp(chunkInt, privateKey, publicKey);
+            decrypted += bigIntToString(decryptedChunk); // Append decrypted chunk
+            chunk = "";
+        } else {
+            chunk += c;
+        }
+    }
+
+    // In case string does not terminate with '-'
+    if (!chunk.empty()) {
+        BigInt chunkInt = fromAsciiStr(chunk);
+        BigInt decryptedChunk = modExp(chunkInt, privateKey, publicKey);
+        decrypted += bigIntToString(decryptedChunk);
+    }
+
+    return decrypted;
 }
 
 RsaKey RSA::getPrivateKey(){
@@ -222,7 +240,8 @@ RsaKey RSA::getPublicKey(){
 std::string RSA::toAsciiStr(BigInt n){
     std::stringstream builder;
 
-	for(char c = static_cast<char>(((uint8_t)n) & 0x0F) + 'A'; n; n >>= 4, c = static_cast<char>((((uint8_t)n) & 0x0F) + 'A')){
+    // n > 0 because -1 >> anything == -1
+	for(unsigned char c = static_cast<unsigned char>((uint8_t)(n & 0x0F)) + 'J'; n > 0; n >>= 4, c = static_cast<unsigned char>(((uint8_t)(n & 0x0F)) + 'J')){
 		builder << c;
 	}
 
@@ -234,9 +253,35 @@ BigInt RSA::fromAsciiStr(const std::string& str){
     uint64_t shift = 0;
 
     for (const char& c : str) {
-        result |= (BigInt(c - 'A') << shift);
+        result |= (BigInt(c - 'J') << shift);
         shift += 4;
     }
 	
     return result;
 }
+
+uint64_t RSA::getPublicKeyLength(){
+    return boost::multiprecision::msb(publicKey) + 1;
+}
+
+#ifdef DEBUG_TESTING
+    void RSA::testLCG(){
+        for(int i = 0; i < 10000; i++){
+            std::cout << lcg.next() << "\n";
+        }
+    }
+
+    void RSA::testPrimeDetection(BigInt n){
+        if(this->rabinMillerIsPrime(n, 10)){
+            std::cout << n << " is probably prime!" << "\n";
+        } else {
+            std::cout << n << " is not prime!" << "\n";
+        }
+    }
+
+    void RSA::testPrimeGeneration(uint16_t keyLength){
+        BigInt prime = this->generatePrime(keyLength);
+
+        std::cout << prime << "\n";
+    }
+#endif

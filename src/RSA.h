@@ -18,6 +18,7 @@ typedef BigInt RsaKey;
 class RSA{
     private:
     RsaKey privateKey, publicKey;
+    uint16_t pubKeyBytes, pubKeyBits;
 
     BigInt modExp(BigInt x, BigInt y, BigInt p);
     BigInt modInv(BigInt a, BigInt m);
@@ -57,10 +58,13 @@ class RSA{
 
     RsaKey getPrivateKey();
     RsaKey getPublicKey();
+    uint64_t getPublicKeyLength();
 
-    void testPrimeDetection(BigInt n);
-    void testLCG();
-    void testPrimeGeneration(uint16_t keyLength);
+    #ifdef DEBUG_TESTING
+        void testPrimeDetection(BigInt n);
+        void testLCG();
+        void testPrimeGeneration(uint16_t keyLength);
+    #endif
 };
 
 #endif

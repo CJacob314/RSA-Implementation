@@ -9,9 +9,11 @@
 #include "src/RSA.h"
 
 int main(void){
-    std::cout << "Generating 4096-bit RSA keypair...\n";
-    RSA rsa(4096);
-    std::cout << "DONE. Enter a message to encrypt, terminating with EOF.\n";
+    uint16_t bits = 16;
+    std::cout << "Generating " << bits << "-bit RSA keypair...\n";
+    RSA rsa(bits);
+
+    std::cout << "Generated. Enter EOF-terminated message to encrypt:\n";
     
     std::istreambuf_iterator<char> begin(std::cin), end;
     std::string message(begin, end);
