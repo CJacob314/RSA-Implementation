@@ -6,10 +6,19 @@
 #include <ctime>
 #include <random>
 #include <cmath>
+
 #include "src/RSA.h"
+#include "src/OAEP.h"
 
 int main(void){
-    uint16_t bits = 16;
+    uint16_t bits = 4096;
+
+    std::cout << "Testing OAEP...\n\tInput string to \"pad\": ";
+    
+    std::string toPad;
+    std::getline(std::cin, toPad);
+    std::cout << "Padded form (with key size " << bits << " bits) is: " << OAEP::pad(toPad, 4096) << "\n";
+    
     std::cout << "Generating " << bits << "-bit RSA keypair...\n";
     RSA rsa(bits);
 
