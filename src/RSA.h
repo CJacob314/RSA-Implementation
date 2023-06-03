@@ -7,11 +7,12 @@
 #include <string>
 #include <sstream>
 
-
 typedef boost::multiprecision::cpp_int BigInt;
 
 #define EVEN(x) (!(x & 1))
 #define ODD(x) (x & 1)
+
+#define OAEP_ENCODING_PARAM "D92PBJK2X9IPKVQ158O4ICUOFXK4Z5OG"
 
 typedef BigInt RsaKey;
 

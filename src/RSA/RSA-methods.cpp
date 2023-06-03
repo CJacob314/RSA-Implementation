@@ -1,4 +1,5 @@
 #include "../RSA.h"
+#include "../OAEP.h"
 #include "../Utilities.h"
 
 BigInt stringToBigInt(const char* message, uint64_t length){
@@ -132,28 +133,43 @@ BigInt RSA::BigLCG::next(){
 }
 
 std::string RSA::encrypt(const char* message, uint64_t length){
+    static const char* P = OAEP_ENCODING_PARAM;
+    static const uint32_t pLen = 32;
+    static const uint32_t maxMsgLen = (pubKeyBytes - 1) - (2 * HASH_BYTES) - 1;
+
     if(!publicKey){
         throw std::runtime_error("No public key!");
-        return 0; 
+        return 0;
     }
 
-    if(length >= pubKeyBytes){
-        uint64_t chunkSize = pubKeyBits - 1;
+    if(length > maxMsgLen){ // Chunking needed for OAEP::pad to work!
+        uint64_t chunkSize = maxMsgLen - 2;
         uint64_t strChunkCharCnt = (chunkSize < 8) ? 1 : chunkSize >> 3;
         uint64_t strChunkCnt = length / strChunkCharCnt + 1;
 
         std::string encStr = "";
         for(uint64_t i = 0; i < strChunkCnt; i++){
-            BigInt chunkEncrypted = modExp(stringToBigInt(message + (i * strChunkCharCnt),
-                std::min(strChunkCharCnt, length - (i * strChunkCharCnt))), e, publicKey);
+            std::string toPad = std::string(message + (i * strChunkCharCnt)).substr(0, std::min(strChunkCharCnt, length - (i * strChunkCharCnt)));
+            std::string padded = OAEP::pad(toPad, pLen, P, pubKeyBytes - 1);
+            std::vector<unsigned char> paddedVec(padded.begin(), padded.end());
+            BigInt converted;
+            import_bits(converted, paddedVec.begin(), paddedVec.end());
+
+            // Truncate padded to std::min(strChunkCharCnt, length - (i * strChunkCharCnt)) length
+            padded = padded.substr(0, std::min(strChunkCharCnt, length - (i * strChunkCharCnt)));
+            BigInt chunkEncrypted = modExp(converted, e, publicKey);
             encStr += toAsciiStr(chunkEncrypted) + "-";
         }
 
         return encStr;
     }
     
+    std::string padded = OAEP::pad(message, pLen, P, pubKeyBytes - 1);
+    std::vector<unsigned char> paddedVec(padded.begin(), padded.end());
+    BigInt converted;
+    import_bits(converted, paddedVec.begin(), paddedVec.end());
 
-    return toAsciiStr(modExp(stringToBigInt(message, length), e, publicKey));
+    return toAsciiStr(modExp(converted, e, publicKey));
 }
 
 std::string RSA::encrypt(std::string message){
@@ -174,7 +190,12 @@ std::string RSA::decrypt(std::string message){
         if(c == '-'){
             BigInt chunkInt = fromAsciiStr(chunk);
             BigInt decryptedChunk = modExp(chunkInt, privateKey, publicKey);
-            decrypted += bigIntToString(decryptedChunk); // Append decrypted chunk
+            // decrypted += bigIntToString(decryptedChunk); // Append decrypted chunk
+
+            std::vector<unsigned char> beforeUnpadVec;
+            export_bits(decryptedChunk, std::back_inserter(beforeUnpadVec), 8);
+            std::string beforeUnpad(beforeUnpadVec.begin(), beforeUnpadVec.end());
+            decrypted += OAEP::unpad(beforeUnpad, 32, OAEP_ENCODING_PARAM);
             chunk = "";
         } else {
             chunk += c;
@@ -185,7 +206,11 @@ std::string RSA::decrypt(std::string message){
     if (!chunk.empty()) {
         BigInt chunkInt = fromAsciiStr(chunk);
         BigInt decryptedChunk = modExp(chunkInt, privateKey, publicKey);
-        decrypted += bigIntToString(decryptedChunk);
+        
+        std::vector<unsigned char> beforeUnpadVec;
+        export_bits(decryptedChunk, std::back_inserter(beforeUnpadVec), 8);
+        std::string beforeUnpad(beforeUnpadVec.begin(), beforeUnpadVec.end());
+        decrypted += OAEP::unpad(beforeUnpad, 32, OAEP_ENCODING_PARAM);
     }
 
     return decrypted;
