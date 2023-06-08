@@ -11,7 +11,7 @@
 #include "src/OAEP.h"
 
 int main(void){
-    uint16_t bits = 1024;
+    uint16_t bits = 4096;
 
     std::cout << "Generating " << bits << "-bit RSA keypair...\n";
     RSA rsa(bits);
@@ -24,19 +24,19 @@ int main(void){
     RSA pubOnly(rsa.getPublicKey());
 
     std::cout << "Encrypting inputted string with the public key...\n";
-    std::string encrypted = pubOnly.encrypt(message);
+    std::string encrypted = pubOnly.encrypt(message, true);
 
     std::cout << "ENCRYPTED MESSAGE BELOW...\n" << encrypted << "\nAttempting decrypt with public key only class (should FAIL)...\n";
 
     try{
-        std::cout << pubOnly.decrypt(encrypted) << "\nNow decrypting with private key class...\n";
+        std::cout << pubOnly.decrypt(encrypted, true) << "\nNow decrypting with private key class...\n";
     } catch(std::runtime_error& e){
         std::cout << "Failed. Exception what():\t" << e.what() << "\n";
     }
 
     std::cout << "Now trying with the private key class...\n";
 
-    std::string decrypted = rsa.decrypt(encrypted);
+    std::string decrypted = rsa.decrypt(encrypted, true);
 
     std::cout << "DECRYPTED:\n\n" << decrypted << "\n";
 

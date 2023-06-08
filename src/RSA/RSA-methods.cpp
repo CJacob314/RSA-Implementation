@@ -132,7 +132,73 @@ BigInt RSA::BigLCG::next(){
     return seed;
 }
 
-std::string RSA::encrypt(const char* message, uint64_t length){
+std::string RSA::toAsciiCompressedStr(const BigInt& n){
+    std::vector<unsigned char> rawVec;
+    export_bits(n, std::back_inserter(rawVec), 8);
+    std::string raw(rawVec.begin(), rawVec.end());
+    size_t rawLen = rawVec.size();
+
+    std::string ascii;
+    static const char tbl[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+/";
+    rawLen = !rawLen ? raw.size() : rawLen;
+    uint16_t buffer = 0;
+    int bufferBits = 0;
+    
+    for(size_t i = 0; i < rawLen; ++i) {
+        uint8_t rawByte = static_cast<uint8_t>(raw[i]);
+        buffer = (buffer << CHAR_BIT) | rawByte;
+        bufferBits += CHAR_BIT;
+
+        while (bufferBits >= 6) {
+            bufferBits -= 6;
+            uint8_t cbyte = static_cast<uint8_t>(buffer >> bufferBits);
+            ascii += tbl[cbyte];
+            buffer &= (1 << bufferBits) - 1;
+        }
+    }
+
+    // if there are remaining bits, append them as well
+    if (bufferBits > 0) {
+        buffer <<= (6 - bufferBits);
+        ascii += tbl[buffer];
+    }
+
+    return ascii;
+}
+
+BigInt RSA::fromAsciiCompressedStr(const std::string& ascii){
+    std::string raw;
+    size_t asciiLen = ascii.size();
+    uint16_t buffer = 0;
+    int bufferBits = 0;
+    
+    for(size_t i = 0; i < asciiLen; ++i) {
+        char asciiChar = ascii[i];
+        uint8_t cbyte;
+        if ('0' <= asciiChar && asciiChar <= '9') cbyte = asciiChar - '0';
+        else if ('A' <= asciiChar && asciiChar <= 'Z') cbyte = asciiChar - 'A' + 10;
+        else if ('a' <= asciiChar && asciiChar <= 'z') cbyte = asciiChar - 'a' + 36;
+        else if (asciiChar == '+') cbyte = 62;
+        else /* asciiChar == '/' */ cbyte = 63;
+
+        buffer = (buffer << 6) | cbyte;
+        bufferBits += 6;
+
+        while (bufferBits >= CHAR_BIT) {
+            bufferBits -= CHAR_BIT;
+            uint8_t rawByte = static_cast<uint8_t>(buffer >> bufferBits);
+            raw += rawByte;
+            buffer &= (1 << bufferBits) - 1;
+        }
+    }
+
+    BigInt result = 0;
+    std::vector<unsigned char> rawVec(raw.begin(), raw.end());
+    import_bits(result, rawVec.begin(), rawVec.end());
+    return result;
+}
+
+std::string RSA::encrypt(const char* message, uint64_t length, bool compressedAsciiOutput){
     static const char* P = OAEP_ENCODING_PARAM;
     static const uint32_t pLen = 32;
     static const uint32_t maxMsgLen = (pubKeyBytes - 1) - (2 * HASH_BYTES) - 1;
@@ -158,7 +224,10 @@ std::string RSA::encrypt(const char* message, uint64_t length){
             // Truncate padded to std::min(strChunkCharCnt, length - (i * strChunkCharCnt)) length
             padded = padded.substr(0, std::min(strChunkCharCnt, length - (i * strChunkCharCnt)));
             BigInt chunkEncrypted = modExp(converted, e, publicKey);
-            encStr += toAsciiStr(chunkEncrypted) + "-";
+            if(compressedAsciiOutput){
+                encStr += toAsciiCompressedStr(chunkEncrypted) + "|";
+            } else
+                encStr += toAsciiStr(chunkEncrypted) + "|";
         }
 
         return encStr;
@@ -169,14 +238,19 @@ std::string RSA::encrypt(const char* message, uint64_t length){
     BigInt converted;
     import_bits(converted, paddedVec.begin(), paddedVec.end());
 
-    return toAsciiStr(modExp(converted, e, publicKey));
+    BigInt encrypted = modExp(converted, e, publicKey);
+    if(compressedAsciiOutput){
+        return toAsciiCompressedStr(encrypted);
+    }
+    else
+        return toAsciiStr(encrypted);
 }
 
-std::string RSA::encrypt(std::string message){
-    return encrypt(message.c_str(), message.length());
+std::string RSA::encrypt(std::string message, bool compressedAsciiOutput){
+    return encrypt(message.c_str(), message.length(), compressedAsciiOutput);
 }
 
-std::string RSA::decrypt(std::string message){
+std::string RSA::decrypt(std::string message, bool compressedAsciiInput){
     if(!privateKey){
         throw std::runtime_error("No private key!");
         return "";
@@ -187,8 +261,13 @@ std::string RSA::decrypt(std::string message){
 
     // Assemble and decrypt the chunks
     for(const char& c : message){
-        if(c == '-'){
-            BigInt chunkInt = fromAsciiStr(chunk);
+        if(c == '|'){
+            BigInt chunkInt;
+            if(compressedAsciiInput){
+                chunkInt = fromAsciiCompressedStr(chunk);
+            } else
+                BigInt chunkInt = fromAsciiStr(chunk);
+            
             BigInt decryptedChunk = modExp(chunkInt, privateKey, publicKey);
             // decrypted += bigIntToString(decryptedChunk); // Append decrypted chunk
 
@@ -202,14 +281,20 @@ std::string RSA::decrypt(std::string message){
         }
     }
 
-    // In case string does not terminate with '-'
+    // In case string does not terminate with '|'
     if (!chunk.empty()) {
-        BigInt chunkInt = fromAsciiStr(chunk);
+        BigInt chunkInt;
+        if(compressedAsciiInput){
+            chunkInt = fromAsciiCompressedStr(chunk);
+        } else
+            chunkInt = fromAsciiStr(chunk);
+
         BigInt decryptedChunk = modExp(chunkInt, privateKey, publicKey);
         
         std::vector<unsigned char> beforeUnpadVec;
         export_bits(decryptedChunk, std::back_inserter(beforeUnpadVec), 8);
         std::string beforeUnpad(beforeUnpadVec.begin(), beforeUnpadVec.end());
+        
         decrypted += OAEP::unpad(beforeUnpad, 32, OAEP_ENCODING_PARAM);
     }
 

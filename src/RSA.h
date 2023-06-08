@@ -6,6 +6,7 @@
 
 #include <string>
 #include <sstream>
+#include <climits>
 
 typedef boost::multiprecision::cpp_int BigInt;
 
@@ -30,6 +31,10 @@ class RSA{
     std::string toAsciiStr(BigInt n);
     BigInt fromAsciiStr(const std::string& str);
 
+    std::string toAsciiCompressedStr(const BigInt& n);
+    BigInt fromAsciiCompressedStr(const std::string& ascii);
+    
+
     const BigInt e = BigInt(1) << 16 | 0x1;
 
     class BigLCG{
@@ -53,9 +58,9 @@ class RSA{
     RSA(RsaKey privateKey, RsaKey publicKey);
     RSA(RsaKey publicKey);
 
-    std::string encrypt(const char* message, uint64_t length);
-    std::string encrypt(std::string message);
-    std::string decrypt(std::string message);
+    std::string encrypt(const char* message, uint64_t length, bool compressedAsciiOutput = false);
+    std::string encrypt(std::string message, bool compressedAsciiOutput = false);
+    std::string decrypt(std::string message, bool compressedAsciiInput = false);
 
     RsaKey getPrivateKey();
     RsaKey getPublicKey();
