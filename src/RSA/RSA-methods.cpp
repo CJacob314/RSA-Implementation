@@ -216,7 +216,16 @@ std::string RSA::encrypt(const char* message, uint64_t length, bool compressedAs
         std::string encStr = "";
         for(uint64_t i = 0; i < strChunkCnt; i++){
             std::string toPad = std::string(message + (i * strChunkCharCnt)).substr(0, std::min(strChunkCharCnt, length - (i * strChunkCharCnt)));
-            std::string padded = OAEP::pad(toPad, pLen, P, pubKeyBytes - 1);
+            
+            std::string padded;
+            try {
+                padded = OAEP::pad(toPad, pLen, P, pubKeyBytes - 1);
+            } catch(std::runtime_error& e){
+                throw e;
+                return "";
+            }
+            
+            
             std::vector<unsigned char> paddedVec(padded.begin(), padded.end());
             BigInt converted;
             import_bits(converted, paddedVec.begin(), paddedVec.end());
@@ -233,7 +242,13 @@ std::string RSA::encrypt(const char* message, uint64_t length, bool compressedAs
         return encStr;
     }
     
-    std::string padded = OAEP::pad(message, pLen, P, pubKeyBytes - 1);
+    std::string padded;
+    try {
+        padded = OAEP::pad(message, pLen, P, pubKeyBytes - 1);
+    } catch(std::runtime_error& e){
+        throw e;
+        return "";
+    }
     std::vector<unsigned char> paddedVec(padded.begin(), padded.end());
     BigInt converted;
     import_bits(converted, paddedVec.begin(), paddedVec.end());
@@ -246,11 +261,11 @@ std::string RSA::encrypt(const char* message, uint64_t length, bool compressedAs
         return toAsciiStr(encrypted);
 }
 
-std::string RSA::encrypt(std::string message, bool compressedAsciiOutput){
+std::string RSA::encrypt(const std::string& message, bool compressedAsciiOutput){
     return encrypt(message.c_str(), message.length(), compressedAsciiOutput);
 }
 
-std::string RSA::decrypt(std::string message, bool compressedAsciiInput){
+std::string RSA::decrypt(const std::string& message, bool compressedAsciiInput){
     if(!privateKey){
         throw std::runtime_error("No private key!");
         return "";
@@ -334,6 +349,161 @@ BigInt RSA::fromAsciiStr(const std::string& str){
 
 uint64_t RSA::getPublicKeyLength(){
     return boost::multiprecision::msb(publicKey) + 1;
+}
+
+bool RSA::exportToFile(const char* filepath, bool exportPrivateKey){
+    if(exportPrivateKey && !privateKey){
+        throw std::runtime_error("No private key!");
+        return false;
+    }
+    
+    FILE* f = fopen(filepath, "wb");
+    if(!f){
+        throw std::runtime_error("Could not open file. Error code: " + std::to_string(errno));
+        return false;
+    }
+
+    if(exportPrivateKey){
+        if(!fwrite("----- RSA PRIVATE KEY -----\n", 1, 28, f)){
+            std::cout << "Could not write to file.";
+            return false;
+        }
+
+
+        std::vector<unsigned char> privKeyVec;
+        export_bits(privateKey, std::back_inserter(privKeyVec), 8);
+        std::string privKeyStr(privKeyVec.begin(), privKeyVec.end());
+        if(!fwrite(privKeyStr.c_str(), 1, privKeyVec.size(), f)){
+            std::cout << "Could not write to file.";
+            return false;
+        }
+
+
+        if(!fwrite("----- END RSA PRIVATE KEY -----\n", 1, 32, f)){
+            std::cout << "Could not write to file.";
+            return false;
+        }
+
+
+    }
+
+    if(!fwrite("----- RSA PUBLIC KEY -----\n", 1, 27, f)){
+            std::cout << "Could not write to file.";
+            return false;
+        }
+
+
+    std::vector<unsigned char> pubKeyVec;
+    export_bits(publicKey, std::back_inserter(pubKeyVec), 8);
+    std::string pubKeyStr(pubKeyVec.begin(), pubKeyVec.end());
+    if(!fwrite(pubKeyStr.c_str(), 1, pubKeyVec.size(), f)){
+            std::cout << "Could not write to file.";
+            return false;
+        }
+
+
+    if(!fwrite("----- END RSA PUBLIC KEY -----\n", 1, 31, f)){
+            std::cout << "Could not write to file.";
+            return false;
+        }
+
+
+
+    if(fclose(f)){
+        throw std::runtime_error("Could not close file. Error code: " + std::to_string(errno));
+        return false;
+    }
+
+    return true;
+}
+
+bool RSA::importFromFile(const char* filepath, bool importPrivateKey){
+    FILE* f = fopen(filepath, "rb+");
+    
+    if(!f){
+        throw std::runtime_error("Could not open file. Error code: " + std::to_string(errno));
+        return false;
+    }
+
+    fseek(f, 0, SEEK_END);
+    size_t fileSize = ftell(f);
+    rewind(f);
+
+    char* fileContents = new char[fileSize + 1];
+    if(!fileContents){
+        throw std::runtime_error("Could not allocate memory for file contents.");
+        return false;
+    }
+
+    size_t success = fread(fileContents, 1, fileSize, f);
+
+    if(!success){
+        throw std::runtime_error("Could not read from file.");
+        return false;
+    }
+
+    if(fclose(f)){
+        throw std::runtime_error("Could not close file. Error code: " + std::to_string(errno));
+        return false;
+    }
+
+    fileContents[success] = '\0';
+
+    if(importPrivateKey){
+        char* privStart;
+
+        if(!(privStart = strstr(fileContents, "----- RSA PRIVATE KEY -----\n"))){
+            throw std::runtime_error("Could not find private key in file.");
+            return false;
+        }
+
+        privStart += 28;
+        
+        char* privEnd = reinterpret_cast<char*>(memmem(reinterpret_cast<const void*>(privStart), success - (privStart - fileContents), reinterpret_cast<const void*>("----- END RSA PRIVATE KEY -----\n"), 32));
+        if(!privEnd){
+            throw std::runtime_error("Could not find end of private key in file.");
+            return false;
+        }
+
+        std::vector<unsigned char> privKeyVec;
+        privKeyVec.reserve(privEnd - privStart);
+
+        for(char* c = privStart; c < privEnd; c++){
+            privKeyVec.push_back(*c);
+        }
+
+        import_bits(this->privateKey, privKeyVec.begin(), privKeyVec.end());
+    }
+
+    char* pubStart;
+    if(!(pubStart = reinterpret_cast<char*>(memmem(fileContents, success, "----- RSA PUBLIC KEY -----\n", 27)))){
+        throw std::runtime_error("Could not find public key in file.");
+        return false;
+    }
+
+    pubStart += 27;
+
+    char* pubEnd = reinterpret_cast<char*>(memmem(pubStart, success - (pubStart - fileContents), "----- END RSA PUBLIC KEY -----\n", 31));
+    if(!pubEnd){
+        throw std::runtime_error("Could not find end of public key in file.");
+        return false;
+    }
+
+    std::vector<unsigned char> pubKeyVec;
+    pubKeyVec.reserve(pubEnd - pubStart);
+    for(char* c = pubStart; c < pubEnd; c++){
+        pubKeyVec.push_back(*c);
+    }
+
+    import_bits(this->publicKey, pubKeyVec.begin(), pubKeyVec.end());
+    this->pubKeyBits = boost::multiprecision::msb(publicKey) + 1;
+    this->pubKeyBytes = this->pubKeyBits >> 3;
+    
+    return true;
+}
+
+RSA RSA::empty(){
+    return RSA();
 }
 
 #ifdef DEBUG_TESTING

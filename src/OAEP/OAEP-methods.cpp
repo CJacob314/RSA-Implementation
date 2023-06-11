@@ -1,11 +1,11 @@
 #include "../OAEP.h"
-#include "../CJacob314-Hash/hashing.h"
+#include "../hashing.h"
 
 namespace OAEP {
     // Implemented from steps here: https://datatracker.ietf.org/doc/html/rfc2437#section-10.2.1
     std::string MGF1(std::string seed, uint16_t maskLength){
         if(maskLength > 0x100000000UL){
-            throw new std::runtime_error("OAEP::MGF1() maskLength too large");
+            throw std::runtime_error("OAEP::MGF1() maskLength too large");
         }
 
         std::string T = "";
@@ -42,7 +42,7 @@ namespace OAEP {
         // Verify that ||M|| <= emLen-2hLen-1
         if(mLen > static_cast<int64_t>(emLen) - (2LL * HASH_BYTES) - 1LL){
             std::cerr << "OAEP::pad() message too long\n";
-            throw new std::runtime_error("OAEP::pad() message too long");
+            throw std::runtime_error("OAEP::pad() message too long");
         }
 
         // Generate octet string PS consisting of emLen - ||M|| - 2hLen - 1 zero octets.
@@ -88,7 +88,7 @@ namespace OAEP {
         uint64_t emLen = padded.size();
         if(emLen < 2 * HASH_BYTES + 1){
             std::cerr << "OAEP::unpad() decoding error\n";
-            throw new std::runtime_error("OAEP::unpad() decoding error");
+            throw std::runtime_error("OAEP::unpad() decoding error");
         }
 
         // Make maskedSeed and maskedDB
@@ -125,14 +125,14 @@ namespace OAEP {
         std::string::size_type mStart = PS.find_first_of(static_cast<char>(0x01));
         if(mStart == std::string::npos){
             std::cerr << "OAEP::unpad() decoding error\n";
-            throw new std::runtime_error("OAEP::unpad() decoding error");
+            throw std::runtime_error("OAEP::unpad() decoding error");
         }
         std::string M = PS.substr(mStart + 1);
 
         // Verify that pHash = pHash'
         if(pHash != pHashPrime){
             std::cerr << "OAEP::unpad() decoding error\n";
-            throw new std::runtime_error("OAEP::unpad() decoding error");
+            throw std::runtime_error("OAEP::unpad() decoding error");
         }
 
         // Final return

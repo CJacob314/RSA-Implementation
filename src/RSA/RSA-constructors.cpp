@@ -37,3 +37,17 @@ RSA::RSA(RsaKey publicKey){
     pubKeyBits = boost::multiprecision::msb(publicKey) + 1;
     pubKeyBytes = pubKeyBits >> 3;
 }
+
+std::optional<RSA> RSA::buildFromKeyFile(const char* filepath, bool importPrivateKey){
+    RSA rsa;
+
+    try {    
+        if(rsa.importFromFile(filepath, importPrivateKey)){
+            return std::make_optional(rsa);
+        } else {
+            return std::nullopt;
+        }
+    } catch (std::runtime_error& e){
+        return {};
+    }
+}
