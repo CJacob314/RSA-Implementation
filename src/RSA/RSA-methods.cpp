@@ -198,7 +198,10 @@ BigInt RSA::fromAsciiCompressedStr(const std::string& ascii){
     return result;
 }
 
-std::string RSA::encrypt(const char* message, uint64_t length, bool compressedAsciiOutput){
+std::string RSA::encrypt(const std::string& messageStr, bool compressedAsciiOutput){
+    const char* message = messageStr.c_str();
+    uint64_t length = messageStr.size();
+
     static const char* P = OAEP_ENCODING_PARAM;
     static const uint32_t pLen = 32;
     static const uint32_t maxMsgLen = (pubKeyBytes - 1) - (2 * HASH_BYTES) - 1;
@@ -261,10 +264,6 @@ std::string RSA::encrypt(const char* message, uint64_t length, bool compressedAs
         return toAsciiStr(encrypted);
 }
 
-std::string RSA::encrypt(const std::string& message, bool compressedAsciiOutput){
-    return encrypt(message.c_str(), message.length(), compressedAsciiOutput);
-}
-
 std::string RSA::decrypt(const std::string& message, bool compressedAsciiInput){
     if(!privateKey){
         throw std::runtime_error("No private key!");
@@ -316,11 +315,11 @@ std::string RSA::decrypt(const std::string& message, bool compressedAsciiInput){
     return decrypted;
 }
 
-RsaKey RSA::getPrivateKey(){
+RsaKey RSA::getPrivateKey() const{
     return privateKey;
 }
 
-RsaKey RSA::getPublicKey(){
+RsaKey RSA::getPublicKey() const {
     return publicKey;
 }
 
@@ -347,7 +346,7 @@ BigInt RSA::fromAsciiStr(const std::string& str){
     return result;
 }
 
-uint64_t RSA::getPublicKeyLength(){
+uint64_t RSA::getPublicKeyLength() const {
     return boost::multiprecision::msb(publicKey) + 1;
 }
 
@@ -527,3 +526,20 @@ RSA RSA::empty(){
         std::cout << prime << "\n";
     }
 #endif
+
+
+// Bind the RSA class to the JS environment
+EMSCRIPTEN_BINDINGS(MyRSA){
+    class_<RSA>("MyRSA")
+        .constructor<uint16_t>()
+        .constructor<RsaKey, RsaKey>()
+        .property("publicKey", &RSA::getPublicKey)
+        .property("privateKey", &RSA::getPrivateKey)
+        .property("publicKeyLength", &RSA::getPublicKeyLength)
+        .class_function("empty", &RSA::empty)
+        .class_function("buildFromKeyFile", &RSA::buildFromKeyFile, allow_raw_pointers())
+        .function("encrypt", &RSA::encrypt)
+        .function("decrypt", &RSA::decrypt)
+        .function("exportToFile", &RSA::exportToFile, allow_raw_pointers())
+        .function("importFromFile", &RSA::importFromFile, allow_raw_pointers());
+}

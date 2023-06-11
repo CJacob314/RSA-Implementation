@@ -1,8 +1,11 @@
 #ifndef __RSA_H
 #define __RSA_H
 
+#define unary_function __unary_function
+
 #include <boost/multiprecision/cpp_int.hpp>
 #include <boost/multiprecision/number.hpp>
+#include <emscripten/bind.h>
 
 #include <string>
 #include <sstream>
@@ -10,6 +13,7 @@
 #include <optional>
 
 typedef boost::multiprecision::cpp_int BigInt;
+using namespace emscripten;
 
 typedef BigInt RsaKey;
 
@@ -64,16 +68,16 @@ class RSA{
     // ! operator will return true if and only if the RSA object is invalid/empty
     bool operator!();
 
-    std::string encrypt(const char* message, uint64_t length, bool compressedAsciiOutput = false);
+    // std::string encrypt(const char* message, uint64_t length, bool compressedAsciiOutput = false);
     std::string encrypt(const std::string& message, bool compressedAsciiOutput = false);
     std::string decrypt(const std::string& message, bool compressedAsciiInput = false);
 
     bool exportToFile(const char* filepath, bool exportPrivateKey = false);
     bool importFromFile(const char* filepath, bool importPrivateKey = false);
 
-    RsaKey getPrivateKey();
-    RsaKey getPublicKey();
-    uint64_t getPublicKeyLength();
+    RsaKey getPrivateKey() const;
+    RsaKey getPublicKey() const;
+    uint64_t getPublicKeyLength() const;
 
     #ifdef DEBUG_TESTING
         void testPrimeDetection(BigInt n);

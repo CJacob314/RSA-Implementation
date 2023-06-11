@@ -1,7 +1,4 @@
-.PHONY: test
+.PHONY: embuild
 
-test:
-	g++ -std=c++17 -o test -Wall -O3 src/RSA/*.cpp src/OAEP/*.cpp src/CJacob314-Hash/*.cpp test.cpp
-
-debug:
-	g++ -g -DDEBUG_TESTING -std=c++17 -o test -Wall -O0 src/RSA/*.cpp src/OAEP/*.cpp src/CJacob314-Hash/*.cpp test.cpp
+embuild:
+	em++ -std=c++2a -lembind -o ../rsa.js src/RSA/*.cpp src/OAEP/OAEP-methods.cpp src/CJacob314-Hash/Hashing.cpp -s USE_BOOST_HEADERS=1
