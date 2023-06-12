@@ -315,12 +315,18 @@ std::string RSA::decrypt(const std::string& message, bool compressedAsciiInput){
     return decrypted;
 }
 
-RsaKey RSA::getPrivateKey() const{
-    return privateKey;
+std::string RSA::getPrivateKey() const{
+    std::vector<unsigned char> privKeyVec;
+    export_bits(privateKey, std::back_inserter(privKeyVec), 8);
+    std::string privKeyStr(privKeyVec.begin(), privKeyVec.end());
+    return privKeyStr;
 }
 
-RsaKey RSA::getPublicKey() const {
-    return publicKey;
+std::string RSA::getPublicKey() const {
+    std::vector<unsigned char> pubKeyVec;
+    export_bits(publicKey, std::back_inserter(pubKeyVec), 8);
+    std::string pubKeyStr(pubKeyVec.begin(), pubKeyVec.end());
+    return pubKeyStr;
 }
 
 std::string RSA::toAsciiStr(BigInt n){
@@ -346,8 +352,8 @@ BigInt RSA::fromAsciiStr(const std::string& str){
     return result;
 }
 
-uint64_t RSA::getPublicKeyLength() const {
-    return boost::multiprecision::msb(publicKey) + 1;
+uint16_t RSA::getPublicKeyLength() const {
+    return pubKeyBits;
 }
 
 bool RSA::exportToFile(const char* filepath, bool exportPrivateKey){
@@ -416,6 +422,32 @@ bool RSA::exportToFile(const char* filepath, bool exportPrivateKey){
     return true;
 }
 
+std::string RSA::exportToString(bool exportPrivateKey){
+    if(exportPrivateKey && !privateKey){
+        throw std::runtime_error("No private key!");
+        return "";
+    }
+    
+    std::string result = "";
+
+    if(exportPrivateKey){
+        result += "----- RSA PRIVATE KEY -----\n";
+        
+        result += toAsciiCompressedStr(privateKey);
+
+
+        result += "----- END RSA PRIVATE KEY -----\n";
+    }
+
+    result += "----- RSA PUBLIC KEY -----\n";
+
+    result += toAsciiCompressedStr(publicKey);
+
+    result += "----- END RSA PUBLIC KEY -----\n";
+
+    return result;
+}
+
 bool RSA::importFromFile(const char* filepath, bool importPrivateKey){
     FILE* f = fopen(filepath, "rb+");
     
@@ -467,7 +499,7 @@ bool RSA::importFromFile(const char* filepath, bool importPrivateKey){
         std::vector<unsigned char> privKeyVec;
         privKeyVec.reserve(privEnd - privStart);
 
-        for(char* c = privStart; c < privEnd; c++){
+        for(const char* c = privStart; c < privEnd; c++){
             privKeyVec.push_back(*c);
         }
 
@@ -501,6 +533,54 @@ bool RSA::importFromFile(const char* filepath, bool importPrivateKey){
     return true;
 }
 
+bool RSA::importFromString(const std::string& s, bool importPrivateKey){
+    const char* fileContents = s.c_str();
+    size_t success = s.size();
+
+    if(importPrivateKey){
+        const char* privStart;
+
+        if(!(privStart = strstr(fileContents, "----- RSA PRIVATE KEY -----\n"))){
+            throw std::runtime_error("Could not find private key in file.");
+            return false;
+        }
+
+        privStart += 28;
+        
+        char* privEnd = reinterpret_cast<char*>(memmem(reinterpret_cast<const void*>(privStart), success - (privStart - fileContents), reinterpret_cast<const void*>("----- END RSA PRIVATE KEY -----\n"), 32));
+        if(!privEnd){
+            throw std::runtime_error("Could not find end of private key in file.");
+            return false;
+        }
+
+        // Get an std::string for the private key (for passing to fromAsciiCompressedStr())
+        std::string privKeyStr(privStart, privEnd - privStart);
+        this->privateKey = fromAsciiCompressedStr(privKeyStr);
+    }
+
+    char* pubStart;
+    if(!(pubStart = reinterpret_cast<char*>(memmem(fileContents, success, "----- RSA PUBLIC KEY -----\n", 27)))){
+        throw std::runtime_error("Could not find public key in file.");
+        return false;
+    }
+
+    pubStart += 27;
+
+    char* pubEnd = reinterpret_cast<char*>(memmem(pubStart, success - (pubStart - fileContents), "----- END RSA PUBLIC KEY -----\n", 31));
+    if(!pubEnd){
+        throw std::runtime_error("Could not find end of public key in file.");
+        return false;
+    }
+
+    std::string pubKeyStr(pubStart, pubEnd - pubStart);
+
+    this->publicKey = fromAsciiCompressedStr(pubKeyStr);
+    this->pubKeyBits = boost::multiprecision::msb(publicKey) + 1;
+    this->pubKeyBytes = this->pubKeyBits >> 3;
+    
+    return true;
+}
+
 RSA RSA::empty(){
     return RSA();
 }
@@ -527,6 +607,27 @@ RSA RSA::empty(){
     }
 #endif
 
+RSA RSA::buildFromString(const std::string& s, bool importPrivateKey){
+    RSA rsa;
+
+    try {    
+        if(rsa.importFromString(s, importPrivateKey)){
+            return rsa;
+        }
+    } catch (std::runtime_error& e){
+        return {};
+    }
+
+    throw std::runtime_error("Could not build RSA object from string.");
+}
+
+bool RSA::isEmpty(){
+    return (!publicKey && !privateKey);
+}
+
+bool RSA::hasPrivate(){
+    return static_cast<bool>(privateKey);
+}
 
 // Bind the RSA class to the JS environment
 EMSCRIPTEN_BINDINGS(MyRSA){
@@ -538,8 +639,12 @@ EMSCRIPTEN_BINDINGS(MyRSA){
         .property("publicKeyLength", &RSA::getPublicKeyLength)
         .class_function("empty", &RSA::empty)
         .class_function("buildFromKeyFile", &RSA::buildFromKeyFile, allow_raw_pointers())
+        .class_function("buildFromString", &RSA::buildFromString, allow_raw_pointers())
         .function("encrypt", &RSA::encrypt)
         .function("decrypt", &RSA::decrypt)
-        .function("exportToFile", &RSA::exportToFile, allow_raw_pointers())
-        .function("importFromFile", &RSA::importFromFile, allow_raw_pointers());
+        .function("exportToString", &RSA::exportToString, allow_raw_pointers())
+        .function("importFromFile", &RSA::importFromFile, allow_raw_pointers())
+        .function("importFromString", &RSA::importFromString, allow_raw_pointers())
+        .function("isEmpty", &RSA::isEmpty)
+        .function("hasPrivate", &RSA::hasPrivate);
 }

@@ -58,26 +58,35 @@ class RSA{
     BigLCG lcg;
 
     public:
+
+    static RSA& getInstance();
+    static void genInstance(uint16_t keyLength);
     
     RSA(uint16_t newKeyLength);
     RSA(RsaKey privateKey, RsaKey publicKey);
     RSA(RsaKey publicKey);
     static std::optional<RSA> buildFromKeyFile(const char* filepath, bool importPrivateKey = false);
+    static RSA buildFromString(const std::string& s, bool importPrivateKey = false);
     static RSA empty(); // Only for use in comparisons, will not encrypt or decrypt anything [unless you manually call importFromFile(), in which case the ! operator will no longer return true].
 
     // ! operator will return true if and only if the RSA object is invalid/empty
     bool operator!();
+    RSA& operator=(const RSA& other);
 
-    // std::string encrypt(const char* message, uint64_t length, bool compressedAsciiOutput = false);
+    bool isEmpty();
+    bool hasPrivate();
+
     std::string encrypt(const std::string& message, bool compressedAsciiOutput = false);
     std::string decrypt(const std::string& message, bool compressedAsciiInput = false);
 
     bool exportToFile(const char* filepath, bool exportPrivateKey = false);
+    std::string exportToString(bool exportPrivateKey);
     bool importFromFile(const char* filepath, bool importPrivateKey = false);
+    bool importFromString(const std::string& s, bool importPrivateKey = false);
 
-    RsaKey getPrivateKey() const;
-    RsaKey getPublicKey() const;
-    uint64_t getPublicKeyLength() const;
+    std::string getPrivateKey() const;
+    std::string getPublicKey() const;
+    uint16_t getPublicKeyLength() const;
 
     #ifdef DEBUG_TESTING
         void testPrimeDetection(BigInt n);
