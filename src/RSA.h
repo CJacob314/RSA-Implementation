@@ -21,6 +21,7 @@ class RSA{
     #define EVEN(x) (!(x & 1))
     #define ODD(x) (x & 1)
     #define OAEP_ENCODING_PARAM "D92PBJK2X9IPKVQ158O4ICUOFXK4Z5OG"
+    #define HASH_BYTES 15 // My hashing algorithm outputs a fixed 15 bytes
 
     private:
     RsaKey privateKey, publicKey;
@@ -78,6 +79,8 @@ class RSA{
 
     std::string encrypt(const std::string& message, bool compressedAsciiOutput = false);
     std::string decrypt(const std::string& message, bool compressedAsciiInput = false);
+    std::string sign(const std::string& message);
+    bool verify(const std::string& signedMessage);
 
     bool exportToFile(const char* filepath, bool exportPrivateKey = false);
     std::string exportToString(bool exportPrivateKey);

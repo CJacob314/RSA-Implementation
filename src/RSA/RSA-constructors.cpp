@@ -2,6 +2,8 @@
 #include "../Utilities.h"
 
 RSA::RSA(uint16_t newKeyLength){
+    newKeyLength++; // Needed to get the key lengths correct.
+    
     if(newKeyLength < 1024){
         throw std::runtime_error("Key length must be at least 1024 bits!");
         return;

@@ -1,6 +1,7 @@
 #include "../RSA.h"
 #include "../OAEP.h"
 #include "../Utilities.h"
+#include "../hashing.h"
 
 BigInt stringToBigInt(const char* message, uint64_t length){
     BigInt messageInt = 0;
@@ -313,6 +314,72 @@ std::string RSA::decrypt(const std::string& message, bool compressedAsciiInput){
     }
 
     return decrypted;
+}
+
+std::string RSA::sign(const std::string& message){
+    if(!privateKey){
+        throw std::runtime_error("No private key!");
+        return "";
+    }
+
+    char hash[HASH_BYTES];
+    Hashing::hash(hash, message.c_str(), message.length());
+
+    std::string signOpS = "";
+
+    BigInt hashInt;
+    import_bits(hashInt, hash, hash + HASH_BYTES);
+    BigInt mod = modExp(hashInt, privateKey, publicKey);
+    std::string signProof = toAsciiCompressedStr(mod);
+
+    return "----- BEGIN RSA SIGNED MESSAGE -----\n" + 
+        message + 
+        "\n----- BEGIN RSA SIGNATURE -----\n" +
+        signProof +
+        "\n----- END RSA SIGNATURE -----\n" +
+        "----- END RSA SIGNED MESSAGE -----\n";
+}
+
+bool RSA::verify(const std::string& signedMessage){
+    if(!publicKey){
+        throw std::runtime_error("No public key!");
+        return false;
+    }
+
+    const char* cstr = signedMessage.c_str();
+    const char* cur, *sigStart, *sigEnd;
+
+    if(!(cur = strstr(cstr, "----- BEGIN RSA SIGNED MESSAGE -----\n"))){
+        throw std::runtime_error("Could not find start of signed message.");
+    }
+
+    if(!(sigStart = strstr(cur, "\n----- BEGIN RSA SIGNATURE -----\n"))){
+        throw std::runtime_error("Could not find start of signature.");
+    }
+
+    if(!(sigEnd = strstr(sigStart, "\n----- END RSA SIGNATURE -----\n"))){
+        throw std::runtime_error("Could not find end of signature.");
+    }
+
+    
+    size_t msgSz = sigStart - cur - 37; // 37 is the size of "----- BEGIN RSA SIGNED MESSAGE -----\n"
+    sigStart += 33; // Must do this AFTER the above line, obviously, so don't move it!
+
+    char* msg = new char[msgSz + 1];
+    memcpy(msg, cur + 37, msgSz);
+    char expectedHash[HASH_BYTES];
+    Hashing::hash(expectedHash, msg, msgSz);
+
+    std::string sig(sigStart, sigEnd - sigStart);
+    BigInt sigInt = fromAsciiCompressedStr(sig);
+    BigInt sigHash = modExp(sigInt, e, publicKey);
+    BigInt expHash;
+    import_bits(expHash, expectedHash, expectedHash + HASH_BYTES);
+
+    
+    delete[] msg;
+
+    return sigHash == expHash;
 }
 
 std::string RSA::getPrivateKey() const{
@@ -646,5 +713,7 @@ EMSCRIPTEN_BINDINGS(MyRSA){
         .function("importFromFile", &RSA::importFromFile, allow_raw_pointers())
         .function("importFromString", &RSA::importFromString, allow_raw_pointers())
         .function("isEmpty", &RSA::isEmpty)
-        .function("hasPrivate", &RSA::hasPrivate);
+        .function("hasPrivate", &RSA::hasPrivate)
+        .function("sign", &RSA::sign)
+        .function("verify", &RSA::verify);
 }
