@@ -133,6 +133,34 @@ BigInt RSA::BigLCG::next(){
     return seed;
 }
 
+std::string RSA::toAsciiCompressedStr(const uint8_t* data, size_t len){
+    std::string ascii;
+    static const char tbl[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+/";
+
+    uint16_t buffer = 0;
+    int bufferBits = 0;
+
+    for(size_t i = 0; i < len; i++) {
+        uint8_t rawByte = data[i];
+        buffer = (buffer << CHAR_BIT) | rawByte;
+        bufferBits += CHAR_BIT;
+
+         while (bufferBits >= 6) {
+            bufferBits -= 6;
+            uint8_t cbyte = static_cast<uint8_t>(buffer >> bufferBits);
+            ascii += tbl[cbyte];
+            buffer &= (1 << bufferBits) - 1;
+        }
+    }
+
+    if (bufferBits > 0) {
+        buffer <<= (6 - bufferBits);
+        ascii += tbl[buffer];
+    }
+
+    return ascii;
+}
+
 std::string RSA::toAsciiCompressedStr(const BigInt& n){
     std::vector<unsigned char> rawVec;
     export_bits(n, std::back_inserter(rawVec), 8);
@@ -502,7 +530,6 @@ std::string RSA::exportToString(bool exportPrivateKey){
         
         result += toAsciiCompressedStr(privateKey);
 
-
         result += "----- END RSA PRIVATE KEY -----\n";
     }
 
@@ -513,6 +540,20 @@ std::string RSA::exportToString(bool exportPrivateKey){
     result += "----- END RSA PUBLIC KEY -----\n";
 
     return result;
+}
+
+std::string RSA::getFingerprint(){
+    if(!publicKey){
+        throw std::runtime_error("No public key!");
+        return "";
+    }
+
+    static char hash[HASH_BYTES];
+    std::vector<char> pubKeyVec;
+    export_bits(publicKey, std::back_inserter(pubKeyVec), 8);
+    Hashing::hash(hash, reinterpret_cast<const char*>(pubKeyVec.data()), pubKeyVec.size());
+    
+    return toAsciiCompressedStr(reinterpret_cast<const uint8_t*>(hash), HASH_BYTES);
 }
 
 bool RSA::importFromFile(const char* filepath, bool importPrivateKey){
@@ -715,5 +756,6 @@ EMSCRIPTEN_BINDINGS(MyRSA){
         .function("isEmpty", &RSA::isEmpty)
         .function("hasPrivate", &RSA::hasPrivate)
         .function("sign", &RSA::sign)
-        .function("verify", &RSA::verify);
+        .function("verify", &RSA::verify)
+        .function("getFingerprint", &RSA::getFingerprint);
 }

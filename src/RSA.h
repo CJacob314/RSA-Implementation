@@ -39,6 +39,7 @@ class RSA{
     BigInt fromAsciiStr(const std::string& str);
 
     std::string toAsciiCompressedStr(const BigInt& n);
+    std::string toAsciiCompressedStr(const uint8_t*, size_t);
     BigInt fromAsciiCompressedStr(const std::string& ascii);
     
     const BigInt e = BigInt(1) << 16 | 0x1;
@@ -81,6 +82,7 @@ class RSA{
     std::string decrypt(const std::string& message, bool compressedAsciiInput = false);
     std::string sign(const std::string& message);
     bool verify(const std::string& signedMessage);
+    std::string getFingerprint();
 
     bool exportToFile(const char* filepath, bool exportPrivateKey = false);
     std::string exportToString(bool exportPrivateKey);
