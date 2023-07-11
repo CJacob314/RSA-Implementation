@@ -8,6 +8,7 @@
 #include <sstream>
 #include <climits>
 #include <optional>
+#include <sys/random.h> // For cryptographically secure random numbers
 
 typedef boost::multiprecision::cpp_int BigInt;
 
@@ -34,6 +35,7 @@ class RSA{
     BigInt fromAsciiStr(const std::string& str);
 
     std::string toAsciiCompressedStr(const BigInt& n);
+    std::string toAsciiCompressedStr(const uint8_t*, size_t);
     BigInt fromAsciiCompressedStr(const std::string& ascii);
     
     const BigInt e = BigInt(1) << 16 | 0x1;
@@ -67,8 +69,11 @@ class RSA{
     std::string encrypt(const char* message, uint64_t length, bool compressedAsciiOutput = false);
     std::string encrypt(const std::string& message, bool compressedAsciiOutput = false);
     std::string decrypt(const std::string& message, bool compressedAsciiInput = false);
+    std::string sign(const std::string& message);
+    bool verify(const std::string& signedMessage);
+    std::string getFingerprint();
 
-    bool exportToFile(const char* filepath, bool exportPrivateKey = false);
+    bool exportToFile(const char* filepath, bool exportPrivateKey = false, bool forWebVersion = false);
     bool importFromFile(const char* filepath, bool importPrivateKey = false);
 
     RsaKey getPrivateKey();

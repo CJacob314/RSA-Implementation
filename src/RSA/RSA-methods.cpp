@@ -1,6 +1,35 @@
 #include "../RSA.h"
 #include "../OAEP.h"
 #include "../Utilities.h"
+#include "../hashing.h"
+
+std::string RSA::toAsciiCompressedStr(const uint8_t* data, size_t len){
+    std::string ascii;
+    static const char tbl[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+/";
+
+    uint16_t buffer = 0;
+    int bufferBits = 0;
+
+    for(size_t i = 0; i < len; i++) {
+        uint8_t rawByte = data[i];
+        buffer = (buffer << CHAR_BIT) | rawByte;
+        bufferBits += CHAR_BIT;
+
+         while (bufferBits >= 6) {
+            bufferBits -= 6;
+            uint8_t cbyte = static_cast<uint8_t>(buffer >> bufferBits);
+            ascii += tbl[cbyte];
+            buffer &= (1 << bufferBits) - 1;
+        }
+    }
+
+    if (bufferBits > 0) {
+        buffer <<= (6 - bufferBits);
+        ascii += tbl[buffer];
+    }
+
+    return ascii;
+}
 
 BigInt stringToBigInt(const char* message, uint64_t length){
     BigInt messageInt = 0;
@@ -113,10 +142,25 @@ BigInt RSA::generatePrime(uint16_t keyLength){
     BigInt prime;
 
     while(!rabinMillerIsPrime(prime, 2)){
-        BigInt min = BigInt(1) << (keyLength - 1);
-        BigInt max = (BigInt(1) << keyLength) - 1;
+        unsigned long bytes = (keyLength + 7) / 8; // Calculate needed number of bytes to store keyLength bits.
+        unsigned long remBits = keyLength % 8; // Number of bits that will be used in the last byte (so I can AND out the extra bits)
 
-        prime = lcg.next() % (max - min + 1) + min;
+        std::vector<uint8_t> v(bytes); // Reserve room in vector to store our random bytes at the same time as initializing all uint8_t's to 0.
+
+        getrandom(v.data(), bytes, GRND_RANDOM); // Using /dev/random instead of /dev/urandom as it blocks if the board does not have enough accumulated entropy to fill the requested bytes.
+
+        // Clear uneeded bits of the last byte
+        // Note that this will work even on big-endian systems as boost::multiprecision::cpp_int (BigInt typedef) ALWAYS expects the least significant byte to be first.
+        v.back() &= static_cast<uint8_t>((1 << remBits) - 1);
+
+        // Import to prime
+        import_bits(prime, v.begin(), v.end());
+
+        // Essentially OR in a 1 to the MSB to make sure that the number is as big as requested by the user.
+        bit_set(prime, keyLength - 1);
+
+        // Also OR in a 1 to the LSB, because no even natural number is prime besides 2
+        bit_set(prime, 0);
     }
 
     return prime;
@@ -347,11 +391,77 @@ BigInt RSA::fromAsciiStr(const std::string& str){
     return result;
 }
 
+std::string RSA::sign(const std::string& message){
+    if(!privateKey){
+        throw std::runtime_error("No private key!");
+        return "";
+    }
+
+    char hash[HASH_BYTES];
+    Hashing::hash(hash, message.c_str(), message.length());
+
+    std::string signOpS = "";
+
+    BigInt hashInt;
+    import_bits(hashInt, hash, hash + HASH_BYTES);
+    BigInt mod = modExp(hashInt, privateKey, publicKey);
+    std::string signProof = toAsciiCompressedStr(mod);
+
+    return "----- BEGIN RSA SIGNED MESSAGE -----\n" + 
+        message + 
+        "\n----- BEGIN RSA SIGNATURE -----\n" +
+        signProof +
+        "\n----- END RSA SIGNATURE -----\n" +
+        "----- END RSA SIGNED MESSAGE -----\n";
+}
+
+bool RSA::verify(const std::string& signedMessage){
+    if(!publicKey){
+        throw std::runtime_error("No public key!");
+        return false;
+    }
+
+    const char* cstr = signedMessage.c_str();
+    const char* cur, *sigStart, *sigEnd;
+
+    if(!(cur = strstr(cstr, "----- BEGIN RSA SIGNED MESSAGE -----\n"))){
+        throw std::runtime_error("Could not find start of signed message.");
+    }
+
+    if(!(sigStart = strstr(cur, "\n----- BEGIN RSA SIGNATURE -----\n"))){
+        throw std::runtime_error("Could not find start of signature.");
+    }
+
+    if(!(sigEnd = strstr(sigStart, "\n----- END RSA SIGNATURE -----\n"))){
+        throw std::runtime_error("Could not find end of signature.");
+    }
+
+    
+    size_t msgSz = sigStart - cur - 37; // 37 is the size of "----- BEGIN RSA SIGNED MESSAGE -----\n"
+    sigStart += 33; // Must do this AFTER the above line, obviously, so don't move it!
+
+    char* msg = new char[msgSz + 1];
+    memcpy(msg, cur + 37, msgSz);
+    char expectedHash[HASH_BYTES];
+    Hashing::hash(expectedHash, msg, msgSz);
+
+    std::string sig(sigStart, sigEnd - sigStart);
+    BigInt sigInt = fromAsciiCompressedStr(sig);
+    BigInt sigHash = modExp(sigInt, e, publicKey);
+    BigInt expHash;
+    import_bits(expHash, expectedHash, expectedHash + HASH_BYTES);
+
+    
+    delete[] msg;
+
+    return sigHash == expHash;
+}
+
 uint64_t RSA::getPublicKeyLength(){
     return boost::multiprecision::msb(publicKey) + 1;
 }
 
-bool RSA::exportToFile(const char* filepath, bool exportPrivateKey){
+bool RSA::exportToFile(const char* filepath, bool exportPrivateKey, bool forWebVersion){
     if(exportPrivateKey && !privateKey){
         throw std::runtime_error("No private key!");
         return false;
@@ -369,45 +479,53 @@ bool RSA::exportToFile(const char* filepath, bool exportPrivateKey){
             return false;
         }
 
-
-        std::vector<unsigned char> privKeyVec;
-        export_bits(privateKey, std::back_inserter(privKeyVec), 8);
-        std::string privKeyStr(privKeyVec.begin(), privKeyVec.end());
-        if(!fwrite(privKeyStr.c_str(), 1, privKeyVec.size(), f)){
-            std::cout << "Could not write to file.";
-            return false;
+        if(forWebVersion){
+            std::string privKeyStr = toAsciiCompressedStr(privateKey);
+            if(!fwrite(privKeyStr.c_str(), 1, privKeyStr.length(), f)){
+                std::cout << "Could not write to file.";
+                return false;
+            }
+        } else {
+            std::vector<unsigned char> privKeyVec;
+            export_bits(privateKey, std::back_inserter(privKeyVec), 8);
+            std::string privKeyStr(privKeyVec.begin(), privKeyVec.end());
+            if(!fwrite(privKeyStr.c_str(), 1, privKeyVec.size(), f)){
+                std::cout << "Could not write to file.";
+                return false;
+            }
         }
-
 
         if(!fwrite("----- END RSA PRIVATE KEY -----\n", 1, 32, f)){
             std::cout << "Could not write to file.";
             return false;
         }
-
-
     }
 
     if(!fwrite("----- RSA PUBLIC KEY -----\n", 1, 27, f)){
+        std::cout << "Could not write to file.";
+        return false;
+    }
+
+    if(forWebVersion){
+        std::string pubKeyStr = toAsciiCompressedStr(publicKey);
+        if(!fwrite(pubKeyStr.c_str(), 1, pubKeyStr.length(), f)){
             std::cout << "Could not write to file.";
             return false;
         }
-
-
-    std::vector<unsigned char> pubKeyVec;
-    export_bits(publicKey, std::back_inserter(pubKeyVec), 8);
-    std::string pubKeyStr(pubKeyVec.begin(), pubKeyVec.end());
-    if(!fwrite(pubKeyStr.c_str(), 1, pubKeyVec.size(), f)){
+    } else {
+        std::vector<unsigned char> pubKeyVec;
+        export_bits(publicKey, std::back_inserter(pubKeyVec), 8);
+        std::string pubKeyStr(pubKeyVec.begin(), pubKeyVec.end());
+        if(!fwrite(pubKeyStr.c_str(), 1, pubKeyVec.size(), f)){
             std::cout << "Could not write to file.";
             return false;
         }
-
+    }
 
     if(!fwrite("----- END RSA PUBLIC KEY -----\n", 1, 31, f)){
-            std::cout << "Could not write to file.";
-            return false;
-        }
-
-
+        std::cout << "Could not write to file.";
+        return false;
+    }
 
     if(fclose(f)){
         throw std::runtime_error("Could not close file. Error code: " + std::to_string(errno));
@@ -415,6 +533,20 @@ bool RSA::exportToFile(const char* filepath, bool exportPrivateKey){
     }
 
     return true;
+}
+
+std::string RSA::getFingerprint(){
+    if(!publicKey){
+        throw std::runtime_error("No public key!");
+        return "";
+    }
+
+    static char hash[HASH_BYTES];
+    std::vector<char> pubKeyVec;
+    export_bits(publicKey, std::back_inserter(pubKeyVec), 8);
+    Hashing::hash(hash, reinterpret_cast<const char*>(pubKeyVec.data()), pubKeyVec.size());
+    
+    return toAsciiCompressedStr(reinterpret_cast<const uint8_t*>(hash), HASH_BYTES);
 }
 
 bool RSA::importFromFile(const char* filepath, bool importPrivateKey){

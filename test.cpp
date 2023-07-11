@@ -7,6 +7,7 @@
 #include <random>
 #include <cmath>
 #include <csignal>
+#include <climits>
 
 #include "src/RSA.h"
 #include "src/OAEP.h"
@@ -57,18 +58,24 @@ int promptLoop(){
             case "help"_:
             case "h"_:
                 std::cout << "Commands:\n"
-                << std::setw(29) << std::left << "load|l <keyfile>" << std::right << ": Load a key or keypair from a file. Will specify whether\n"
-                    << std::setw(29) << std::left << "" << std::right << "  the program was able to find a full keypair or just the public key.\n"
-                << std::setw(29) << std::left << "gen|g <keylength>" << std::right << ": Generate a keypair with bit-length <keylength> and load it.\n"
-                << std::setw(29) << std::left << "encrypt|e" << std::right << ": Encrypt a message with the loaded public key. Message should be entered on the\n"
-                    << std::setw(29) << std::left << "" << std::right << "  following line and terminated with the line \"END MSG\"\n"
-                << std::setw(29) << std::left << "decrypt|d" << std::right << ": Decrypt a ciphertext with the loaded private key. Ciphertext should be entered on\n"
-                     << std::setw(29) << std::left << "" << std::right << "  a single line following the command.\n"
-                << std::setw(29) << std::left << "store|s <keyfile> PRIVATE?" << std::right << ": Stores the currently loaded key to file <keyfile>. If \"PRIVATE\" is specified,\n"
-                    << std::setw(29) << std::left << "" << std::right << "  the full keypair with private key will be stored.\n"
-                << std::setw(29) << std::left << "clear|c" << std::right << ": Clear the screen with ANSI codes (if your terminal supports that)\n"
-                << std::setw(29) << std::left << "help|h" << std::right << ": Display this message\n"
-                << std::setw(29) << std::left << "exit|quit|q" << std::right <<  ": Exit the program\n";
+                << std::setw(35) << std::left << "load|l <keyfile>" << std::right << ": Load a key or keypair from a file. Will specify whether\n"
+                    << std::setw(35) << std::left << "" << std::right << "  the program was able to find a full keypair or just the public key.\n"
+                << std::setw(35) << std::left << "gen|g <keylength>" << std::right << ": Generate a keypair with bit-length <keylength> and load it.\n"
+                << std::setw(35) << std::left << "encrypt|e" << std::right << ": Encrypt a message with the loaded public key. Message should be entered on the\n"
+                    << std::setw(35) << std::left << "" << std::right << "  following line and terminated with the line \"END MSG\"\n"
+                << std::setw(35) << std::left << "decrypt|d" << std::right << ": Decrypt a ciphertext with the loaded private key. Ciphertext should be entered on\n"
+                     << std::setw(35) << std::left << "" << std::right << "  a single line following the command.\n"
+                << std::setw(35) << std::left << "store|s <keyfile> PRIVATE? WEB?" << std::right << ": Stores the currently loaded key to file <keyfile>. If \"PRIVATE\" is specified,\n"
+                    << std::setw(35) << std::left << "" << std::right << "  the full keypair with private key will be stored. If \"WEB\" is, then the key\n" 
+                    << std::setw(35) << std::left << "" << std::right << "  will be formatted for use with rsa.jacobcohen.dev only.\n"
+                << std::setw(35) << std::left << "clear|c" << std::right << ": Clear the screen with ANSI codes (if your terminal supports that)\n"
+                << std::setw(35) << std::left << "fingerprint|f" << std::right << ": Show the fingerprint of the currently loaded key.\n"
+                << std::setw(35) << std::left << "sign" << std::right << ": Sign a message with the loaded private key. Message should be entered on the\n" 
+                    << std::setw(35) << std::left << "" << std::right << "  following line and terminated with the line \"END MSG\"\n"
+                << std::setw(35) << std::left << "verify|v" << std::right << ": Verify a message's integrity against the loaded public key. Full signed message should\n" 
+                    << std::setw(35) << std::left << "" << std::right << "  be entered on the following line.\n"
+                << std::setw(35) << std::left << "help|h" << std::right << ": Display this message\n"
+                << std::setw(35) << std::left << "exit|quit|q" << std::right <<  ": Exit the program\n";
                 break;
             case "load"_:
             case "l"_:
@@ -229,10 +236,28 @@ int promptLoop(){
 
                 std::getline(std::cin, keyfile);
                 
+                size_t minCutoff = SIZE_MAX;
+
                 bool includePrivate = false;
                 if(keyfile.find("PRIVATE") != std::string::npos){
                     includePrivate = true;
-                    keyfile = keyfile.substr(0, keyfile.find("PRIVATE") - 1);
+                    size_t pos = keyfile.find("PRIVATE");
+                    if(pos < minCutoff){
+                        minCutoff = pos;
+                    }
+                }
+
+                bool webFormat = false;
+                if(keyfile.find("WEB") != std::string::npos){
+                    webFormat = true;
+                    size_t pos = keyfile.find("WEB");
+                    if(pos < minCutoff){
+                        minCutoff = pos;
+                    }
+                }
+
+                if(minCutoff != SIZE_MAX){
+                    keyfile = keyfile.substr(0, minCutoff - 1);
                 }
 
                 if(!keyfile.size() || std::all_of(keyfile.begin(), keyfile.end(), [](char c){return std::isspace(c);})){
@@ -241,13 +266,63 @@ int promptLoop(){
                 }
 
                 try{
-                    if(!rsa->exportToFile(keyfile.c_str(), includePrivate)){
+                    if(!rsa->exportToFile(keyfile.c_str(), includePrivate, webFormat)){
                         std::cout << "Exported " << (includePrivate ? "keypair" : "public key") << " to file.\n";
                     }
                 } catch (std::runtime_error& e){
                     std::cout << "Failed to export keypair to file! Reason:\t" << e.what() << "\n";
                 }
 
+                break;
+            }
+            case "f"_:
+            case "fingerprint"_:
+            {
+                if(!rsa){
+                    std::cout << "No key loaded. Use 'load' or 'gen' to load or generate a key.\n";
+                    break;
+                }
+
+                std::cout << "Fingerprint:\t" << rsa->getFingerprint() << "\n";
+                break;
+            }
+            case "sign"_:
+            {
+                if(!rsa){
+                    std::cout << "No key loaded. Use 'load' or 'gen' to load or generate a key.\n";
+                    break;
+                }
+
+                if(!rsa->getPrivateKey()){
+                    std::cout << "No private key loaded. Use 'load' to load a keypair.\n";
+                    break;
+                }
+
+                std::cout << "Enter message to sign (remember to terminate with \"END MSG\" on its own line):\n";
+                std::string toSign;
+                while(std::getline(std::cin, line) && line != "END MSG"){
+                    toSign += line + "\n";
+                }
+
+                std::cout << "\n\nSigned message below:\n\n" << rsa->sign(toSign) << "\n";
+                break;
+            }
+            case "verify"_:
+            case "v"_:
+            {
+                if(!rsa){
+                    std::cout << "No key loaded. Use 'load' or 'gen' to load or generate a key.\n";
+                    break;
+                }
+
+                std::cout << "Enter signed message to verify:\n";
+                std::string signedMessage;
+                while(std::getline(std::cin, line) && line != "----- END RSA SIGNED MESSAGE -----"){
+                    signedMessage += line + "\n";
+                }
+                signedMessage += line;
+
+                std::cout << "\n\n" << (rsa->verify(signedMessage) ? "\e[1;32mMessage verified successfully!\e[0m\n" : "\e[1;31mMessage verification failed!\e[0m\n");
                 break;
             }
             default:
