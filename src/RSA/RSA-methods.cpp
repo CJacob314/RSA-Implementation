@@ -3,6 +3,8 @@
 #include "../Utilities.h"
 #include "../hashing.h"
 
+#include <emscripten.h>
+
 BigInt stringToBigInt(const char* message, uint64_t length){
     BigInt messageInt = 0;
     for(uint64_t i = 0; i < length; i++){
@@ -110,14 +112,42 @@ bool RSA::__rabinMillerHelper(BigInt d, BigInt n){
     return false;
 }
 
+void RSA::populateRandomBytes(){
+    std::string r(emscripten_run_script_string(JsRandomScript.c_str()));
+    jsRandomBytes.assign(r.begin(), r.end());
+}
+
 BigInt RSA::generatePrime(uint16_t keyLength){
+    static size_t randomBytesIdx = 0;
     BigInt prime;
 
     while(!rabinMillerIsPrime(prime, 2)){
-        BigInt min = BigInt(1) << (keyLength - 1);
-        BigInt max = (BigInt(1) << keyLength) - 1;
+        unsigned long bytes = (keyLength + 7) / 8; // Calculate needed number of bytes to store keyLength bits.
+        unsigned long remBits = keyLength % 8; // Number of bits that will be used in the last byte (so I can AND out the extra bits)
 
-        prime = lcg.next() % (max - min + 1) + min;
+        std::vector<uint8_t> v(bytes); // Reserve room in vector to store our random bytes at the same time as initializing all uint8_t's to 0.
+
+        if(randomBytesIdx + bytes > jsRandomBytes.size()){
+            populateRandomBytes();
+            randomBytesIdx = 0;
+        }
+
+        memcpy(v.data(), jsRandomBytes.data() + randomBytesIdx, bytes);
+        randomBytesIdx += bytes;
+
+        // Clear uneeded bits of the last byte
+        if(remBits){
+            v[0] &= static_cast<uint8_t>((1 << remBits) - 1);
+        }
+
+        // Import to prime
+        import_bits(prime, v.begin(), v.end());
+
+        // Essentially OR in a 1 to the MSB to make sure that the number is as big as requested by the user.
+        bit_set(prime, keyLength - 1);
+
+        // Also OR in a 1 to the LSB, because no even natural number is prime besides 2
+        bit_set(prime, 0);
     }
 
     return prime;

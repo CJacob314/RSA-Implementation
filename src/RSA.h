@@ -11,6 +11,7 @@
 #include <sstream>
 #include <climits>
 #include <optional>
+#include <vector>
 
 typedef boost::multiprecision::cpp_int BigInt;
 using namespace emscripten;
@@ -21,26 +22,30 @@ class RSA{
     #define EVEN(x) (!(x & 1))
     #define ODD(x) (x & 1)
     #define OAEP_ENCODING_PARAM "D92PBJK2X9IPKVQ158O4ICUOFXK4Z5OG"
+    #define JS_RAND_BYTES_STORE_CNT 65536 // Maximum amount of allowed by the WebCryptoAPI: https://www.w3.org/TR/WebCryptoAPI/#Crypto-method-getRandomValues
     #define HASH_BYTES 15 // My hashing algorithm outputs a fixed 15 bytes
 
     private:
     RsaKey privateKey, publicKey;
     uint16_t pubKeyBytes, pubKeyBits;
+    std::vector<uint8_t> jsRandomBytes;
+    std::string JsRandomScript;
 
     RSA() {}; // Empty constructor private only for use only in static builder-style "constructor" and in static RSA::emptyRSA() method (to be used for comparisons)
 
-    BigInt modExp(BigInt x, BigInt y, BigInt p);
-    BigInt modInv(BigInt a, BigInt m);
-    bool rabinMillerIsPrime(const BigInt& n, uint64_t accuracy);
-    bool __rabinMillerHelper(BigInt d, BigInt n);
+    BigInt modExp(BigInt, BigInt, BigInt);
+    BigInt modInv(BigInt, BigInt);
+    bool rabinMillerIsPrime(const BigInt&, uint64_t accuracy);
+    bool __rabinMillerHelper(BigInt, BigInt);
     BigInt generatePrime(uint16_t keyLength);
+    void populateRandomBytes();
 
-    std::string toAsciiStr(BigInt n);
-    BigInt fromAsciiStr(const std::string& str);
+    std::string toAsciiStr(BigInt);
+    BigInt fromAsciiStr(const std::string&);
 
-    std::string toAsciiCompressedStr(const BigInt& n);
+    std::string toAsciiCompressedStr(const BigInt&);
     std::string toAsciiCompressedStr(const uint8_t*, size_t);
-    BigInt fromAsciiCompressedStr(const std::string& ascii);
+    BigInt fromAsciiCompressedStr(const std::string&);
     
     const BigInt e = BigInt(1) << 16 | 0x1;
 

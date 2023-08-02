@@ -2,14 +2,19 @@
 #include "../Utilities.h"
 
 RSA::RSA(uint16_t newKeyLength){
-    newKeyLength++; // Needed to get the key lengths correct.
-    
+    // Just use std::string and the + operator to create the JsRandomScript string
+    // TODO: Write a constexpr function to do this with char buffers at COMPILE time!
+    JsRandomScript = "let r = new Uint8Array(" + std::to_string(JS_RAND_BYTES_STORE_CNT) + "); let s = ''; crypto.getRandomValues(r); r.forEach((i) => {s += String.fromCharCode(i);}); s";
+
+    // Reserve space for the SECURE random bytes crypto.getRandomValues() generates.
+    jsRandomBytes.reserve(JS_RAND_BYTES_STORE_CNT);
+
     if(newKeyLength < 1024){
         throw std::runtime_error("Key length must be at least 1024 bits!");
         return;
     }
 
-    BigInt p = generatePrime((newKeyLength >> 1) + (ODD(newKeyLength) ? 1 : 0)); // This only slightly raises the probability of hitting the correct bit-length on the nose. It will always be within 1, though.
+    BigInt p = generatePrime(newKeyLength >> 1);
     BigInt q = generatePrime(newKeyLength >> 1);
     publicKey = p * q;
 
