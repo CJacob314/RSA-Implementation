@@ -4,26 +4,27 @@
 #include <boost/multiprecision/cpp_int.hpp>
 #include <boost/multiprecision/number.hpp>
 
-#include <string>
-#include <sstream>
 #include <climits>
 #include <optional>
+#include <sstream>
+#include <string>
 #include <sys/random.h> // For cryptographically secure random numbers
 
 typedef boost::multiprecision::cpp_int BigInt;
 
 typedef BigInt RsaKey;
 
-class RSA{
-    #define EVEN(x) (!(x & 1))
-    #define ODD(x) (x & 1)
-    #define OAEP_ENCODING_PARAM "D92PBJK2X9IPKVQ158O4ICUOFXK4Z5OG"
+class RSA {
+#define EVEN(x) (!(x & 1))
+#define ODD(x) (x & 1)
+#define OAEP_ENCODING_PARAM "D92PBJK2X9IPKVQ158O4ICUOFXK4Z5OG"
 
     private:
     RsaKey privateKey, publicKey;
     uint16_t pubKeyBytes, pubKeyBits;
 
-    RSA() {}; // Empty constructor private only for use only in static builder-style "constructor" and in static RSA::emptyRSA() method (to be used for comparisons)
+    RSA(){}; // Empty constructor private only for use only in static builder-style "constructor" and in static RSA::emptyRSA() method (to
+             // be used for comparisons)
 
     BigInt modExp(BigInt x, BigInt y, BigInt p);
     BigInt modInv(BigInt a, BigInt m);
@@ -37,10 +38,10 @@ class RSA{
     std::string toAsciiCompressedStr(const BigInt& n);
     std::string toAsciiCompressedStr(const uint8_t*, size_t);
     BigInt fromAsciiCompressedStr(const std::string& ascii);
-    
+
     const BigInt e = BigInt(1) << 16 | 0x1;
 
-    class BigLCG{
+    class BigLCG {
         private:
         BigInt seed;
 
@@ -56,12 +57,12 @@ class RSA{
     BigLCG lcg;
 
     public:
-    
     RSA(uint16_t newKeyLength);
     RSA(RsaKey privateKey, RsaKey publicKey);
     RSA(RsaKey publicKey);
     static std::optional<RSA> buildFromKeyFile(const char* filepath, bool importPrivateKey = false);
-    static RSA empty(); // Only for use in comparisons, will not encrypt or decrypt anything [unless you manually call importFromFile(), in which case the ! operator will no longer return true].
+    static RSA empty(); // Only for use in comparisons, will not encrypt or decrypt anything [unless you manually call importFromFile(), in
+                        // which case the ! operator will no longer return true].
 
     // ! operator will return true if and only if the RSA object is invalid/empty
     bool operator!();
@@ -80,11 +81,11 @@ class RSA{
     RsaKey getPublicKey();
     uint64_t getPublicKeyLength();
 
-    #ifdef DEBUG_TESTING
-        void testPrimeDetection(BigInt n);
-        void testLCG();
-        void testPrimeGeneration(uint16_t keyLength);
-    #endif
+#ifdef DEBUG_TESTING
+    void testPrimeDetection(BigInt n);
+    void testLCG();
+    void testPrimeGeneration(uint16_t keyLength);
+#endif
 };
 
 #endif
