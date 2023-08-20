@@ -3,6 +3,22 @@
 #include "../Utilities.h"
 #include "../hashing.h"
 
+// As far as I can tell, Apple's clang-based g++ does not support getrandom(), so I am directly reading from /dev/random here.
+#ifdef __APPLE__
+#include <fcntl.h>
+static ssize_t mac_getrandom(void *buf, size_t buflen) {
+    int fd = open("/dev/random", O_RDONLY);
+    if (fd == -1) {
+        throw std::runtime_error("Failed to open /dev/random");
+    }
+
+    ssize_t bytesRead = read(fd, buf, buflen);
+    close(fd);
+
+    return bytesRead;
+}
+#endif
+
 std::string RSA::toAsciiCompressedStr(const uint8_t* data, size_t len) {
     std::string ascii;
     static const char tbl[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz+/";
@@ -138,9 +154,12 @@ BigInt RSA::generatePrime(uint16_t keyLength) {
         std::vector<uint8_t> v(
             bytes); // Reserve room in vector to store our random bytes at the same time as initializing all uint8_t's to 0.
 
+        #ifdef __APPLE__
+        mac_getrandom(v.data(), bytes);
+        #else
         getrandom(v.data(), bytes, GRND_RANDOM); // Using /dev/random instead of /dev/urandom as it blocks if the board does not have enough
                                                  // accumulated entropy to fill the requested bytes.
-
+        #endif
         // Clear uneeded bits of the last byte
         // Note that this will work even on big-endian systems as boost::multiprecision::cpp_int (BigInt typedef) ALWAYS expects the least
         // significant byte to be first.
@@ -164,7 +183,11 @@ RSA::BigLCG::BigLCG() {
                       // Seeding a linear congruential generator with a secure pseudorandom number is not as secure as using only the
                       // cryptographically secure random numbers, but it is MUCH more secure than using rand() to seed an LCG!
 
+    #ifdef __APPLE__
+    mac_getrandom(&rawSeed, sizeof(rawSeed));
+    #else
     getrandom(&rawSeed, sizeof(rawSeed), GRND_RANDOM);
+    #endif
     BigInt seed = rawSeed;
     this->seed = seed;
 }
