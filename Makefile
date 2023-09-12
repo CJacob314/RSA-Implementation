@@ -10,7 +10,7 @@ endif
 
 
 test:
-	g++ $(SHARED_FLAGS) -O3 src/RSA/*.cpp src/OAEP/*.cpp src/CJacob314-Hash/*.cpp test.cpp
+	$(CC) $(SHARED_FLAGS) -O3 src/RSA/*.cpp src/OAEP/*.cpp src/CJacob314-Hash/*.cpp test.cpp
 
 debug:
-	g++ $(SHARED_FLAGS) -g -DDEBUG_TESTING -O0 src/RSA/*.cpp src/OAEP/*.cpp src/CJacob314-Hash/*.cpp test.cpp
+	$(CC) $(SHARED_FLAGS) -g -DDEBUG_TESTING -O0 src/RSA/*.cpp src/OAEP/*.cpp src/CJacob314-Hash/*.cpp test.cpp
