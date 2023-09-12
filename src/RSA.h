@@ -83,8 +83,8 @@ class RSA{
     bool isEmpty();
     bool hasPrivate();
 
-    std::string encrypt(const std::string& message, bool compressedAsciiOutput = false);
-    std::string decrypt(const std::string& message, bool compressedAsciiInput = false);
+    std::string encrypt(const std::string&, bool compressedAsciiOutput = false);
+    std::string decrypt(const std::string&, bool compressedAsciiInput = false);
     std::string sign(const std::string& message);
     bool verify(const std::string& signedMessage);
     std::string getFingerprint();
