@@ -29,7 +29,6 @@ constexpr uint32_t hash(const char* s, size_t sz) noexcept {
 constexpr inline uint32_t operator"" _(char const* p, size_t s) { return hash(p, s); }
 
 int main(int argc, char* argv[]) {
-
     if (argc > 1) {
         // TODO: Implement command line arguments
         std::cout << "Command line arguments not supported yet.\n"
@@ -159,7 +158,8 @@ int promptLoop() {
 
             std::cout << "Attempting " << keylength << "-bit RSA keypair generation...\n";
             try {
-                rsa = std::make_unique<RSA>(RSA(keylength));
+                // rsa = std::make_unique<RSA>(RSA(keylength));
+                rsa = std::make_unique<RSA>(keylength);
             } catch (std::runtime_error& e) {
                 std::cout << "Failed to generate keypair. Reason:\t" << e.what() << "\n";
                 break;
@@ -183,7 +183,8 @@ int promptLoop() {
                 toEncrypt += line + "\n";
             }
 
-            std::cout << "Encrypted message:\n" << rsa->encrypt(toEncrypt, true) << "\n";
+            std::cout << "Encrypted message:\n"
+                      << rsa->encrypt(toEncrypt, true) << "\n";
             break;
         }
         case "decrypt"_:
@@ -217,7 +218,8 @@ int promptLoop() {
                 }
             }
 
-            std::cout << "Decrypted message:\n" << decrypted << "\n";
+            std::cout << "Decrypted message:\n"
+                      << decrypted << "\n";
 
             break;
         }
@@ -311,7 +313,8 @@ int promptLoop() {
                 toSign += line + "\n";
             }
 
-            std::cout << "\n\nSigned message below:\n\n" << rsa->sign(toSign) << "\n";
+            std::cout << "\n\nSigned message below:\n\n"
+                      << rsa->sign(toSign) << "\n";
             break;
         }
         case "verify"_:

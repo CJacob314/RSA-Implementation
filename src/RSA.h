@@ -8,6 +8,10 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <atomic>       // For multithreading
+#include <future>       // For multithreading
+#include <mutex>        // For multithreading
+#include <thread>       // For multithreading
 #include <sys/random.h> // For cryptographically secure random numbers
 
 typedef boost::multiprecision::cpp_int BigInt;
@@ -20,7 +24,14 @@ class RSA {
 #define OAEP_ENCODING_PARAM "D92PBJK2X9IPKVQ158O4ICUOFXK4Z5OG"
 
     private:
-    RsaKey privateKey, publicKey;
+    const unsigned int Num_Prime_Search_Threads = std::thread::hardware_concurrency();
+    std::array<BigInt, 2> primes;        // The threads will write to this array when they've found a sufficient prime.
+    std::mutex mtx;                      // To guard threaded access to the above `primes` array.
+    std::atomic<uint8_t> primesFound{0}; // The control which index of `primes` to write to once a prime has been found.
+    std::atomic<bool> stopFlag{false};   // To signal the threads to stop searching for primes.
+    std::condition_variable cv;          // To signal the main thread when we've found two large primes.
+
+    RsaKey privateKey, publicKey; // `publicKey` here is JUST the RSA modulus, since I always use e = 2^16 - 1.
     uint16_t pubKeyBytes, pubKeyBits;
 
     RSA(){}; // Empty constructor private only for use only in static builder-style "constructor" and in static RSA::emptyRSA() method (to
@@ -30,7 +41,7 @@ class RSA {
     BigInt modInv(BigInt a, BigInt m);
     bool rabinMillerIsPrime(const BigInt& n, uint64_t accuracy);
     bool __rabinMillerHelper(BigInt d, BigInt n);
-    BigInt generatePrime(uint16_t keyLength);
+    void generatePrime(uint16_t keyLength);
 
     std::string toAsciiStr(BigInt n);
     BigInt fromAsciiStr(const std::string& str);
@@ -54,12 +65,11 @@ class RSA {
         BigInt next();
     };
 
-    BigLCG lcg;
-
     public:
     RSA(uint16_t newKeyLength);
     RSA(RsaKey privateKey, RsaKey publicKey);
     RSA(RsaKey publicKey);
+    RSA(RSA&& other) noexcept; // Move constructor
     static std::optional<RSA> buildFromKeyFile(const char* filepath, bool importPrivateKey = false);
     static RSA empty(); // Only for use in comparisons, will not encrypt or decrypt anything [unless you manually call importFromFile(), in
                         // which case the ! operator will no longer return true].
@@ -83,8 +93,6 @@ class RSA {
 
 #ifdef DEBUG_TESTING
     void testPrimeDetection(BigInt n);
-    void testLCG();
-    void testPrimeGeneration(uint16_t keyLength);
 #endif
 };
 

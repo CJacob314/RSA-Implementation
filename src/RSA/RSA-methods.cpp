@@ -6,7 +6,7 @@
 // As far as I can tell, Apple's clang-based g++ does not support getrandom(), so I am directly reading from /dev/random here.
 #ifdef __APPLE__
 #include <fcntl.h>
-static ssize_t mac_getrandom(void *buf, size_t buflen) {
+static ssize_t mac_getrandom(void* buf, size_t buflen) {
     int fd = open("/dev/random", O_RDONLY);
     if (fd == -1) {
         throw std::runtime_error("Failed to open /dev/random");
@@ -127,6 +127,8 @@ bool RSA::rabinMillerIsPrime(const BigInt& n, uint64_t accuracy) {
 }
 
 bool RSA::__rabinMillerHelper(BigInt d, BigInt n) {
+    thread_local BigLCG lcg;
+
     BigInt a = 2 + lcg.next() % (n - 4);
 
     BigInt x = modExp(a, d, n);
@@ -144,22 +146,23 @@ bool RSA::__rabinMillerHelper(BigInt d, BigInt n) {
     return false;
 }
 
-BigInt RSA::generatePrime(uint16_t keyLength) {
+void RSA::generatePrime(uint16_t keyLength) {
     BigInt prime;
+    bool foundPrime = false;
 
-    while (!rabinMillerIsPrime(prime, 2)) {
+    while (!stopFlag.load() && !(foundPrime = rabinMillerIsPrime(prime, 2))) {
         unsigned long bytes = (keyLength + 7) / 8; // Calculate needed number of bytes to store keyLength bits.
         unsigned long remBits = keyLength % 8;     // Number of bits that will be used in the last byte (so I can AND out the extra bits)
 
         std::vector<uint8_t> v(
             bytes); // Reserve room in vector to store our random bytes at the same time as initializing all uint8_t's to 0.
 
-        #ifdef __APPLE__
+#ifdef __APPLE__
         mac_getrandom(v.data(), bytes);
-        #else
+#else
         getrandom(v.data(), bytes, GRND_RANDOM); // Using /dev/random instead of /dev/urandom as it blocks if the board does not have enough
                                                  // accumulated entropy to fill the requested bytes.
-        #endif
+#endif
         // Clear uneeded bits of the last byte
         // Note that this will work even on big-endian systems as boost::multiprecision::cpp_int (BigInt typedef) ALWAYS expects the least
         // significant byte to be first.
@@ -174,8 +177,27 @@ BigInt RSA::generatePrime(uint16_t keyLength) {
         // Also OR in a 1 to the LSB, because no even natural number is prime besides 2
         bit_set(prime, 0);
     }
+    if (!foundPrime) {
+        // We were told to stop, so return.
+        return;
+    } else {
+        // Prime number (probably) found!
+        std::unique_lock<std::mutex> lock(mtx); // Lock the mutex
 
-    return prime;
+        if (primesFound.load() >= 2) {
+            // If the primeIdx is >= 2 BEFORE we increment it, PREVENT RACE CONDITION!
+            return;
+        }
+
+        uint8_t primeIdx = primesFound.fetch_add(1);
+
+        primes[primeIdx] = prime;
+
+        if (primesFound >= 2) {
+            stopFlag.store(true); // Tell other threads to stop.
+            cv.notify_one();      // Notify main thread we have found two primes.
+        }
+    }
 }
 
 RSA::BigLCG::BigLCG() {
@@ -183,11 +205,11 @@ RSA::BigLCG::BigLCG() {
                       // Seeding a linear congruential generator with a secure pseudorandom number is not as secure as using only the
                       // cryptographically secure random numbers, but it is MUCH more secure than using rand() to seed an LCG!
 
-    #ifdef __APPLE__
+#ifdef __APPLE__
     mac_getrandom(&rawSeed, sizeof(rawSeed));
-    #else
+#else
     getrandom(&rawSeed, sizeof(rawSeed), GRND_RANDOM);
-    #endif
+#endif
     BigInt seed = rawSeed;
     this->seed = seed;
 }
@@ -652,12 +674,6 @@ bool RSA::importFromFile(const char* filepath, bool importPrivateKey) {
 RSA RSA::empty() { return RSA(); }
 
 #ifdef DEBUG_TESTING
-void RSA::testLCG() {
-    for (int i = 0; i < 10000; i++) {
-        std::cout << lcg.next() << "\n";
-    }
-}
-
 void RSA::testPrimeDetection(BigInt n) {
     if (this->rabinMillerIsPrime(n, 10)) {
         std::cout << n << " is probably prime!"
@@ -666,11 +682,5 @@ void RSA::testPrimeDetection(BigInt n) {
         std::cout << n << " is not prime!"
                   << "\n";
     }
-}
-
-void RSA::testPrimeGeneration(uint16_t keyLength) {
-    BigInt prime = this->generatePrime(keyLength);
-
-    std::cout << prime << "\n";
 }
 #endif
