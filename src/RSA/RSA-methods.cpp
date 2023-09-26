@@ -3,8 +3,6 @@
 #include "../Utilities.h"
 #include "../hashing.h"
 
-#include <emscripten.h>
-
 BigInt stringToBigInt(const char* message, uint64_t length) {
     BigInt messageInt = 0;
     for (uint64_t i = 0; i < length; i++) {
@@ -85,6 +83,8 @@ bool RSA::rabinMillerIsPrime(const BigInt& n, uint64_t accuracy) {
 }
 
 bool RSA::__rabinMillerHelper(BigInt d, BigInt n) {
+    thread_local BigLCG lcg;
+
     BigInt a = 2 + lcg.next() % (n - 4);
 
     BigInt x = modExp(a, d, n);
@@ -107,11 +107,12 @@ void RSA::populateRandomBytes() {
     jsRandomBytes.assign(r.begin(), r.end());
 }
 
-BigInt RSA::generatePrime(uint16_t keyLength) {
+void RSA::generatePrime(uint16_t keyLength) {
     static size_t randomBytesIdx = 0;
     BigInt prime;
+    bool foundPrime = false;
 
-    while (!rabinMillerIsPrime(prime, 2)) {
+    while (!stopFlag.load() && !(foundPrime = rabinMillerIsPrime(prime, 2))) {
         unsigned long bytes = (keyLength + 7) / 8; // Calculate needed number of bytes to store keyLength bits.
         unsigned long remBits = keyLength % 8;     // Number of bits that will be used in the last byte (so I can AND out the extra bits)
 
@@ -141,7 +142,26 @@ BigInt RSA::generatePrime(uint16_t keyLength) {
         bit_set(prime, 0);
     }
 
-    return prime;
+    if (!foundPrime) {
+        // We were told to stop, so return.
+        return;
+    } else {
+        // Prime number (probably) found!
+        std::unique_lock<std::mutex> lock(mtx); // Lock the mutex
+        if (primesFound.load() >= 2) {
+            // If the primeIdx is >= 2 BEFORE we increment it, PREVENT RACE CONDITION!
+            return;
+        }
+
+        uint8_t primeIdx = primesFound.fetch_add(1);
+
+        primes[primeIdx] = prime;
+
+        if (primesFound >= 2) {
+            stopFlag.store(true); // Tell other threads to stop.
+            cv.notify_one();      // Notify main thread we have found two primes.
+        }
+    }
 }
 
 RSA::BigLCG::BigLCG() {

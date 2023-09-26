@@ -12,6 +12,11 @@
 #include <climits>
 #include <optional>
 #include <vector>
+#include <atomic>       // For multithreading
+#include <future>       // For multithreading
+#include <mutex>        // For multithreading
+#include <thread>       // For multithreading
+#include <emscripten.h>
 
 typedef boost::multiprecision::cpp_int BigInt;
 using namespace emscripten;
@@ -26,6 +31,13 @@ class RSA{
     #define HASH_BYTES 15 // My hashing algorithm outputs a fixed 15 bytes
 
     private:
+    const unsigned int Num_Prime_Search_Threads = std::thread::hardware_concurrency();
+    std::array<BigInt, 2> primes;        // The threads will write to this array when they've found a sufficient prime.
+    std::mutex mtx;                      // To guard threaded access to the above `primes` array.
+    std::atomic<uint8_t> primesFound{0}; // The control which index of `primes` to write to once a prime has been found.
+    std::atomic<bool> stopFlag{false};   // To signal the threads to stop searching for primes.
+    std::condition_variable cv;          // To signal the main thread when we've found two large primes.
+    
     RsaKey privateKey, publicKey;
     uint16_t pubKeyBytes, pubKeyBits;
     std::vector<uint8_t> jsRandomBytes;
@@ -37,7 +49,7 @@ class RSA{
     BigInt modInv(BigInt, BigInt);
     bool rabinMillerIsPrime(const BigInt&, uint64_t accuracy);
     bool __rabinMillerHelper(BigInt, BigInt);
-    BigInt generatePrime(uint16_t keyLength);
+    void generatePrime(uint16_t keyLength);
     void populateRandomBytes();
 
     std::string toAsciiStr(BigInt);
@@ -62,16 +74,14 @@ class RSA{
         BigInt next();
     };
 
-    BigLCG lcg;
-
     public:
-
     static RSA& getInstance();
     static void genInstance(uint16_t keyLength);
     
     RSA(uint16_t newKeyLength);
     RSA(RsaKey privateKey, RsaKey publicKey);
     RSA(RsaKey publicKey);
+    RSA(RSA&& other) noexcept; // Move constructor
     static std::optional<RSA> buildFromKeyFile(const char* filepath, bool importPrivateKey = false);
     static RSA buildFromString(const std::string& s, bool importPrivateKey = false);
     static RSA empty(); // Only for use in comparisons, will not encrypt or decrypt anything [unless you manually call importFromFile(), in which case the ! operator will no longer return true].
