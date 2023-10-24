@@ -3,6 +3,11 @@
 
 #include <boost/multiprecision/cpp_int.hpp>
 #include <boost/multiprecision/number.hpp>
+#include <boost/multiprecision/miller_rabin.hpp>
+#include <boost/random/random_device.hpp>
+#include <boost/random/mersenne_twister.hpp>
+#include <boost/random/uniform_int_distribution.hpp>
+#include <boost/integer/mod_inverse.hpp>
 
 #include <climits>
 #include <optional>
@@ -15,7 +20,6 @@
 #include <sys/random.h> // For cryptographically secure random numbers
 
 typedef boost::multiprecision::cpp_int BigInt;
-
 typedef BigInt RsaKey;
 
 class RSA {
@@ -37,8 +41,6 @@ class RSA {
     RSA(){}; // Empty constructor private only for use only in static builder-style "constructor" and in static RSA::emptyRSA() method (to
              // be used for comparisons)
 
-    BigInt modExp(BigInt x, BigInt y, BigInt p);
-    BigInt modInv(BigInt a, BigInt m);
     bool rabinMillerIsPrime(const BigInt& n, uint64_t accuracy);
     bool __rabinMillerHelper(BigInt d, BigInt n);
     void generatePrime(uint16_t keyLength);

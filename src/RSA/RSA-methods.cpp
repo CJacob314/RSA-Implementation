@@ -67,83 +67,11 @@ std::string bigIntToString(BigInt message) {
     return messageString;
 }
 
-// Only works given a and m are coprime, which they almost CERTAINLY are given my implementation.
-// That is, unless I get VERY unlucky and my prime is a multiple of 65537.
-// Runs in O(log(m)) and uses O(1) space.
-BigInt RSA::modInv(BigInt a, BigInt m) {
-    BigInt m0 = m;
-    BigInt y = 0, x = 1;
+inline bool RSA::rabinMillerIsPrime(const BigInt& n, uint64_t accuracy) {
+    boost::random::random_device true_rand; // Cryptographically secure RNG (essentially the getrandom I use elsewhere) to seed the below Mersenne Twister
+    boost::random::mt19937 gen(true_rand());
 
-    if (m == 1) return 0;
-
-    while (a > 1) {
-        BigInt q = a / m;
-        BigInt t = m;
-
-        // Now run Extended Euclidean Algorithm
-        m = a % m, a = t;
-        t = y;
-
-        y = x - q * y;
-        x = t;
-    }
-
-    // We need to return a positive integer.
-    if (x < 0) x += m0;
-
-    return x;
-}
-
-BigInt RSA::modExp(BigInt x, BigInt y, BigInt p) {
-    BigInt z = 1;
-
-    if (x >= p) x %= p;
-
-    while (y > 0) {
-        if (ODD(y)) {
-            z = (z * x) % p;
-        }
-
-        y >>= 1; // Quick /= 2
-        x = (x * x) % p;
-    }
-
-    return z;
-}
-
-bool RSA::rabinMillerIsPrime(const BigInt& n, uint64_t accuracy) {
-    if (n <= 1 || n == 4) return false;
-    if (n <= 3) return true;
-
-    if (EVEN(n)) return false;
-
-    BigInt d = n - 1;
-    while (!(d % 2)) d /= 2;
-
-    for (uint64_t i = 0; i < accuracy; i++)
-        if (!__rabinMillerHelper(d, n)) return false;
-
-    return true;
-}
-
-bool RSA::__rabinMillerHelper(BigInt d, BigInt n) {
-    thread_local BigLCG lcg;
-
-    BigInt a = 2 + lcg.next() % (n - 4);
-
-    BigInt x = modExp(a, d, n);
-
-    if (x == 1 || x == n - 1) return true;
-
-    while (d != n - 1) {
-        x = (x * x) % n;
-        d *= 2;
-
-        if (x == 1) return false;
-        if (x == n - 1) return true;
-    }
-
-    return false;
+    return boost::multiprecision::miller_rabin_test(n, accuracy, gen);
 }
 
 void RSA::generatePrime(uint16_t keyLength) {
@@ -151,41 +79,20 @@ void RSA::generatePrime(uint16_t keyLength) {
     bool foundPrime = false;
 
     while (!stopFlag.load() && !(foundPrime = rabinMillerIsPrime(prime, 2))) {
-        unsigned long bytes = (keyLength + 7) / 8; // Calculate needed number of bytes to store keyLength bits.
-        unsigned long remBits = keyLength % 8;     // Number of bits that will be used in the last byte (so I can AND out the extra bits)
+        boost::random::random_device rng;
+        boost::random::uniform_int_distribution<BigInt> dist(BigInt(1) << (keyLength - 1), (BigInt(1) << keyLength) - 1);
+        prime = dist(rng);
 
-        std::vector<uint8_t> v(
-            bytes); // Reserve room in vector to store our random bytes at the same time as initializing all uint8_t's to 0.
-
-#ifdef __APPLE__
-        mac_getrandom(v.data(), bytes);
-#else
-        getrandom(v.data(), bytes, GRND_RANDOM); // Using /dev/random instead of /dev/urandom as it blocks if the board does not have enough
-                                                 // accumulated entropy to fill the requested bytes.
-#endif
-        // Clear uneeded bits of the last byte
-        // Note that this will work even on big-endian systems as boost::multiprecision::cpp_int (BigInt typedef) ALWAYS expects the least
-        // significant byte to be first.
-        v.back() &= static_cast<uint8_t>((1 << remBits) - 1);
-
-        // Import to prime
-        import_bits(prime, v.begin(), v.end());
-
-        // Essentially OR in a 1 to the MSB to make sure that the number is as big as requested by the user.
-        bit_set(prime, keyLength - 1);
-
-        // Also OR in a 1 to the LSB, because no even natural number is prime besides 2
+        // Ensure the number is odd
         bit_set(prime, 0);
     }
+
     if (!foundPrime) {
-        // We were told to stop, so return.
         return;
     } else {
-        // Prime number (probably) found!
-        std::unique_lock<std::mutex> lock(mtx); // Lock the mutex
+        std::unique_lock<std::mutex> lock(mtx);
 
         if (primesFound.load() >= 2) {
-            // If the primeIdx is >= 2 BEFORE we increment it, PREVENT RACE CONDITION!
             return;
         }
 
@@ -194,8 +101,8 @@ void RSA::generatePrime(uint16_t keyLength) {
         primes[primeIdx] = prime;
 
         if (primesFound >= 2) {
-            stopFlag.store(true); // Tell other threads to stop.
-            cv.notify_one();      // Notify main thread we have found two primes.
+            stopFlag.store(true);
+            cv.notify_one();
         }
     }
 }
@@ -324,7 +231,7 @@ std::string RSA::encrypt(const char* message, uint64_t length, bool compressedAs
 
             // Truncate padded to std::min(strChunkCharCnt, length - (i * strChunkCharCnt)) length
             padded = padded.substr(0, std::min(strChunkCharCnt, length - (i * strChunkCharCnt)));
-            BigInt chunkEncrypted = modExp(converted, e, publicKey);
+            BigInt chunkEncrypted = boost::multiprecision::powm(converted, e, publicKey);
             if (compressedAsciiOutput) {
                 encStr += toAsciiCompressedStr(chunkEncrypted) + "|";
             } else
@@ -345,7 +252,7 @@ std::string RSA::encrypt(const char* message, uint64_t length, bool compressedAs
     BigInt converted;
     import_bits(converted, paddedVec.begin(), paddedVec.end());
 
-    BigInt encrypted = modExp(converted, e, publicKey);
+    BigInt encrypted = boost::multiprecision::powm(converted, e, publicKey);
     if (compressedAsciiOutput) {
         return toAsciiCompressedStr(encrypted);
     } else
@@ -374,7 +281,7 @@ std::string RSA::decrypt(const std::string& message, bool compressedAsciiInput) 
             } else
                 BigInt chunkInt = fromAsciiStr(chunk);
 
-            BigInt decryptedChunk = modExp(chunkInt, privateKey, publicKey);
+            BigInt decryptedChunk = boost::multiprecision::powm(chunkInt, privateKey, publicKey);
             // decrypted += bigIntToString(decryptedChunk); // Append decrypted chunk
 
             std::vector<unsigned char> beforeUnpadVec;
@@ -395,7 +302,7 @@ std::string RSA::decrypt(const std::string& message, bool compressedAsciiInput) 
         } else
             chunkInt = fromAsciiStr(chunk);
 
-        BigInt decryptedChunk = modExp(chunkInt, privateKey, publicKey);
+        BigInt decryptedChunk = boost::multiprecision::powm(chunkInt, privateKey, publicKey);
 
         std::vector<unsigned char> beforeUnpadVec;
         export_bits(decryptedChunk, std::back_inserter(beforeUnpadVec), 8);
@@ -448,7 +355,7 @@ std::string RSA::sign(const std::string& message) {
 
     BigInt hashInt;
     import_bits(hashInt, hash, hash + HASH_BYTES);
-    BigInt mod = modExp(hashInt, privateKey, publicKey);
+    BigInt mod = boost::multiprecision::powm(hashInt, privateKey, publicKey);
     std::string signProof = toAsciiCompressedStr(mod);
 
     return "----- BEGIN RSA SIGNED MESSAGE -----\n" + message + "\n----- BEGIN RSA SIGNATURE -----\n" + signProof +
@@ -486,7 +393,7 @@ bool RSA::verify(const std::string& signedMessage) {
 
     std::string sig(sigStart, sigEnd - sigStart);
     BigInt sigInt = fromAsciiCompressedStr(sig);
-    BigInt sigHash = modExp(sigInt, e, publicKey);
+    BigInt sigHash = boost::multiprecision::powm(sigInt, e, publicKey);
     BigInt expHash;
     import_bits(expHash, expectedHash, expectedHash + HASH_BYTES);
 

@@ -10,7 +10,7 @@ endif
 
 
 test:
-	$(CC) $(SHARED_FLAGS) -O3 src/RSA/*.cpp src/OAEP/*.cpp src/CJacob314-Hash/*.cpp test.cpp -pthread
+	$(CC) $(SHARED_FLAGS) -O3 src/RSA/*.cpp src/OAEP/*.cpp src/CJacob314-Hash/*.cpp test.cpp -pthread -lboost_random -lboost_system
 
 debug:
-	$(CC) $(SHARED_FLAGS) -g -DDEBUG_TESTING -O0 src/RSA/*.cpp src/OAEP/*.cpp src/CJacob314-Hash/*.cpp test.cpp -pthread
+	$(CC) $(SHARED_FLAGS) -g -DDEBUG_TESTING -O0 src/RSA/*.cpp src/OAEP/*.cpp src/CJacob314-Hash/*.cpp test.cpp -pthread -lboost_random -lboost_system

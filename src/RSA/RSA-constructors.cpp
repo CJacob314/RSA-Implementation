@@ -33,7 +33,7 @@ RSA::RSA(uint16_t newKeyLength) {
     pubKeyBytes = (pubKeyBits < 8) ? 1 : pubKeyBits >> 3;
 
     BigInt phi = (primes[0] - 1) * (primes[1] - 1);
-    privateKey = modInv(e, phi);
+    privateKey = boost::integer::mod_inverse(e, phi);
 
 #ifdef DEBUG_TESTING
     std::cout << "p: " << primes[0] << "\n\nq: " << primes[1] << "\n\nphi(p*q): " << phi << "\n\nPublicKey(n=p*q): " << publicKey
@@ -72,9 +72,9 @@ std::optional<RSA> RSA::buildFromKeyFile(const char* filepath, bool importPrivat
 
 // Move constructor
 RSA::RSA(RSA&& other) noexcept
-    : primes(std::move(other.primes)),
+    : Num_Prime_Search_Threads(std::move(other.Num_Prime_Search_Threads)),
+      primes(std::move(other.primes)),
       privateKey(std::move(other.privateKey)),
       publicKey(std::move(other.publicKey)),
-      pubKeyBits(std::move(other.pubKeyBits)),
       pubKeyBytes(std::move(other.pubKeyBytes)),
-      Num_Prime_Search_Threads(std::move(other.Num_Prime_Search_Threads)) {}
+      pubKeyBits(std::move(other.pubKeyBits)) {}
