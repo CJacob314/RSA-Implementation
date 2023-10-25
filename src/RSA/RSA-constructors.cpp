@@ -14,7 +14,12 @@ RSA::RSA(uint16_t newKeyLength){
         return;
     }
 
-        // Create a thread pool (I do create and destroy it every time, which is inefficient for multiple key generations) for prime number searching
+    populateRandomBytes(); // Initially populate buffer once to seed `rng`
+    std::seed_seq seed(jsRandomBytes.begin(), jsRandomBytes.end());
+    rng = std::mt19937_64(seed);
+    populateRandomBytes(); // Repopulate buffer
+
+    // Create a thread pool (I do create and destroy it every time, which is inefficient for multiple key generations) for prime number searching
     std::vector<std::thread> searchThreads(Num_Prime_Search_Threads);
 
     size_t i = 0;
@@ -40,7 +45,7 @@ RSA::RSA(uint16_t newKeyLength){
     pubKeyBytes = (pubKeyBits < 8) ? 1 : pubKeyBits >> 3;
 
     BigInt phi = (primes[0] - 1) * (primes[1] - 1);
-    privateKey = modInv(e, phi);
+    privateKey = boost::integer::mod_inverse(e, phi);
 
     #ifdef DEBUG_TESTING
         std::cout << "p: " << primes[0] << "\n\nq: " << primes[1] << "\n\nphi(p*q): " << phi << "\n\nPublicKey(n=p*q): " << publicKey

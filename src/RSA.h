@@ -5,6 +5,8 @@
 
 #include <boost/multiprecision/cpp_int.hpp>
 #include <boost/multiprecision/number.hpp>
+#include <boost/multiprecision/miller_rabin.hpp>
+#include <boost/integer/mod_inverse.hpp>
 #include <emscripten/bind.h>
 
 #include <string>
@@ -12,11 +14,13 @@
 #include <climits>
 #include <optional>
 #include <vector>
+#include <random>
 #include <atomic>       // For multithreading
 #include <future>       // For multithreading
 #include <mutex>        // For multithreading
 #include <thread>       // For multithreading
 #include <emscripten.h>
+
 
 typedef boost::multiprecision::cpp_int BigInt;
 using namespace emscripten;
@@ -37,6 +41,7 @@ class RSA{
     std::atomic<uint8_t> primesFound{0}; // The control which index of `primes` to write to once a prime has been found.
     std::atomic<bool> stopFlag{false};   // To signal the threads to stop searching for primes.
     std::condition_variable cv;          // To signal the main thread when we've found two large primes.
+    std::mt19937_64 rng;                 // PRNG for Miller Rabin test (seeded by as cryptographically secure bytes as we can get on WASM currently without wasi-random)
     
     RsaKey privateKey, publicKey;
     uint16_t pubKeyBytes, pubKeyBits;
@@ -45,8 +50,6 @@ class RSA{
 
     RSA() {}; // Empty constructor private only for use only in static builder-style "constructor" and in static RSA::emptyRSA() method (to be used for comparisons)
 
-    BigInt modExp(BigInt, BigInt, BigInt);
-    BigInt modInv(BigInt, BigInt);
     bool rabinMillerIsPrime(const BigInt&, uint64_t accuracy);
     bool __rabinMillerHelper(BigInt, BigInt);
     void generatePrime(uint16_t keyLength);

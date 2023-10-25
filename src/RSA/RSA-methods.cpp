@@ -23,63 +23,8 @@ std::string bigIntToString(BigInt message) {
     return messageString;
 }
 
-// Only works given a and m are coprime, which they almost CERTAINLY are given my implementation.
-// That is, unless I get VERY unlucky and my prime is a multiple of 65537.
-// Runs in O(log(m)) and uses O(1) space.
-BigInt RSA::modInv(BigInt a, BigInt m) {
-    BigInt m0 = m;
-    BigInt y = 0, x = 1;
-
-    if (m == 1) return 0;
-
-    while (a > 1) {
-        BigInt q = a / m;
-        BigInt t = m;
-
-        // Now run Extended Euclidean Algorithm
-        m = a % m, a = t;
-        t = y;
-
-        y = x - q * y;
-        x = t;
-    }
-
-    // We need to return a positive integer.
-    if (x < 0) x += m0;
-
-    return x;
-}
-
-BigInt RSA::modExp(BigInt x, BigInt y, BigInt p) {
-    BigInt z = 1;
-
-    if (x >= p) x %= p;
-
-    while (y > 0) {
-        if (ODD(y)) {
-            z = (z * x) % p;
-        }
-
-        y >>= 1; // Quick /= 2
-        x = (x * x) % p;
-    }
-
-    return z;
-}
-
-bool RSA::rabinMillerIsPrime(const BigInt& n, uint64_t accuracy) {
-    if (n <= 1 || n == 4) return false;
-    if (n <= 3) return true;
-
-    if (EVEN(n)) return false;
-
-    BigInt d = n - 1;
-    while (!(d % 2)) d /= 2;
-
-    for (uint64_t i = 0; i < accuracy; i++)
-        if (!__rabinMillerHelper(d, n)) return false;
-
-    return true;
+inline bool RSA::rabinMillerIsPrime(const BigInt& n, uint64_t accuracy) {
+    return boost::multiprecision::miller_rabin_test(n, accuracy, rng);
 }
 
 bool RSA::__rabinMillerHelper(BigInt d, BigInt n) {
@@ -87,7 +32,7 @@ bool RSA::__rabinMillerHelper(BigInt d, BigInt n) {
 
     BigInt a = 2 + lcg.next() % (n - 4);
 
-    BigInt x = modExp(a, d, n);
+    BigInt x = boost::multiprecision::powm(a, d, n);
 
     if (x == 1 || x == n - 1) return true;
 
@@ -311,7 +256,7 @@ std::string RSA::encrypt(const std::string& msg, bool compressedAsciiOutput) {
 
             // Truncate padded to std::min(strChunkCharCnt, length - (i * strChunkCharCnt)) length
             // padded = padded.substr(0, std::min(strChunkCharCnt, length - (i * strChunkCharCnt)));
-            BigInt chunkEncrypted = modExp(converted, e, publicKey);
+            BigInt chunkEncrypted = boost::multiprecision::powm(converted, e, publicKey);
 
             if (compressedAsciiOutput) {
                 encStr += toAsciiCompressedStr(chunkEncrypted) + "|";
@@ -334,7 +279,7 @@ std::string RSA::encrypt(const std::string& msg, bool compressedAsciiOutput) {
     BigInt converted;
     import_bits(converted, paddedVec.begin(), paddedVec.end());
 
-    BigInt encrypted = modExp(converted, e, publicKey);
+    BigInt encrypted = boost::multiprecision::powm(converted, e, publicKey);
 
     if (compressedAsciiOutput) {
         return toAsciiCompressedStr(encrypted);
@@ -362,7 +307,7 @@ std::string RSA::decrypt(const std::string& message, bool compressedAsciiInput) 
             } else
                 BigInt chunkInt = fromAsciiStr(chunk);
 
-            BigInt decryptedChunk = modExp(chunkInt, privateKey, publicKey);
+            BigInt decryptedChunk = boost::multiprecision::powm(chunkInt, privateKey, publicKey);
 
             std::vector<unsigned char> beforeUnpadVec;
             export_bits(decryptedChunk, std::back_inserter(beforeUnpadVec), 8);
@@ -384,7 +329,7 @@ std::string RSA::decrypt(const std::string& message, bool compressedAsciiInput) 
         } else
             chunkInt = fromAsciiStr(chunk);
 
-        BigInt decryptedChunk = modExp(chunkInt, privateKey, publicKey);
+        BigInt decryptedChunk = boost::multiprecision::powm(chunkInt, privateKey, publicKey);
 
         std::vector<unsigned char> beforeUnpadVec;
         export_bits(decryptedChunk, std::back_inserter(beforeUnpadVec), 8);
@@ -411,7 +356,7 @@ std::string RSA::sign(const std::string& message) {
 
     BigInt hashInt;
     import_bits(hashInt, hash, hash + HASH_BYTES);
-    BigInt mod = modExp(hashInt, privateKey, publicKey);
+    BigInt mod = boost::multiprecision::powm(hashInt, privateKey, publicKey);
     std::string signProof = toAsciiCompressedStr(mod);
 
     return "----- BEGIN RSA SIGNED MESSAGE -----\n" + message + "\n----- BEGIN RSA SIGNATURE -----\n" + signProof +
@@ -449,7 +394,7 @@ bool RSA::verify(const std::string& signedMessage) {
 
     std::string sig(sigStart, sigEnd - sigStart);
     BigInt sigInt = fromAsciiCompressedStr(sig);
-    BigInt sigHash = modExp(sigInt, e, publicKey);
+    BigInt sigHash = boost::multiprecision::powm(sigInt, e, publicKey);
     BigInt expHash;
     import_bits(expHash, expectedHash, expectedHash + HASH_BYTES);
 
