@@ -3,3 +3,7 @@ test
 
 # VSCode Directory
 .vscode
+
+# Object files
+*.o
+**/*.o

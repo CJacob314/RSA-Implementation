@@ -15,6 +15,7 @@
 
 // test.cpp prototypes
 int promptLoop();
+void signalHandler(int);
 
 // Quick string hash functions from the below SO link (only slightly modified). Used for (slightly slower) switch cases with strings because
 // it's fun
@@ -43,10 +44,7 @@ int main(int argc, char* argv[]) {
 
 int promptLoop() {
     // Bind SIGINT handler
-    signal(SIGINT, [](int sig) {
-        std::cout << "\nCaught SIGINT. Exiting...\n";
-        exit(0);
-    });
+    signal(SIGINT, signalHandler);
 
     // Begin loop
     std::cout << "Enter a command (Type 'help' or just 'h' for a list of commands, use ctrl+C, ctrl+D, or type \"exit\" to exit):\n";
@@ -225,7 +223,7 @@ int promptLoop() {
         }
         case "clear"_:
         case "c"_:
-            std::cout << "\e[2J\e[1;1H";
+            std::cout << "\033[2J\033[1;1H";
             break;
         case "store"_:
         case "s"_: {
@@ -332,8 +330,8 @@ int promptLoop() {
             signedMessage += line;
 
             std::cout << "\n\n"
-                      << (rsa->verify(signedMessage) ? "\e[1;32mMessage verified successfully!\e[0m\n"
-                                                     : "\e[1;31mMessage verification failed!\e[0m\n");
+                      << (rsa->verify(signedMessage) ? "\033[1;32mMessage verified successfully!\033[0m\n"
+                                                     : "\033[1;31mMessage verification failed!\033[0m\n");
             break;
         }
         default:
@@ -350,4 +348,11 @@ uint32_t hash(const std::string& s) noexcept {
     uint32_t hash = 5381;
     for (const auto& c : s) hash = ((hash << 5) + hash) + (unsigned char)c;
     return hash;
+}
+
+void signalHandler(int sig) {
+    if (sig == SIGINT) {
+        std::cout << "\nCaught SIGINT. Exiting...\n";
+        exit(0);
+    }
 }
