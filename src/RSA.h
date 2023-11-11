@@ -25,11 +25,11 @@ class RSA {
 
     private:
     const unsigned int Num_Prime_Search_Threads = std::thread::hardware_concurrency();
-    std::array<BigInt, 2> primes;        // The threads will write to this array when they've found a sufficient prime.
-    std::mutex mtx;                      // To guard threaded access to the above `primes` array.
-    std::atomic<uint8_t> primesFound{0}; // The control which index of `primes` to write to once a prime has been found.
-    std::atomic<bool> stopFlag{false};   // To signal the threads to stop searching for primes.
-    std::condition_variable cv;          // To signal the main thread when we've found two large primes.
+    std::array<BigInt, 2> primes = {0, 0}; // The threads will write to this array when they've found a sufficient prime.
+    std::mutex mtx;                        // To guard threaded access to the above `primes` array.
+    std::atomic<uint8_t> primesFound{0};   // The control which index of `primes` to write to once a prime has been found.
+    std::atomic<bool> stopFlag{false};     // To signal the threads to stop searching for primes.
+    std::condition_variable cv;            // To signal the main thread when we've found two large primes.
 
     RsaKey privateKey, publicKey; // `publicKey` here is JUST the RSA modulus, since I always use e = 2^16 - 1.
     uint16_t pubKeyBytes, pubKeyBits;
@@ -87,8 +87,9 @@ class RSA {
     bool exportToFile(const char* filepath, bool exportPrivateKey = false, bool forWebVersion = false);
     bool importFromFile(const char* filepath, bool importPrivateKey = false);
 
-    RsaKey getPrivateKey();
-    RsaKey getPublicKey();
+    RsaKey getPrivateKey() const noexcept;
+    RsaKey getPublicKey() const noexcept;
+    std::array<BigInt, 2> getPrimes() const;
     uint64_t getPublicKeyLength();
 
 #ifdef DEBUG_TESTING

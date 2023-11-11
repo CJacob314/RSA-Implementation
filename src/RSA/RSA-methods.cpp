@@ -407,9 +407,9 @@ std::string RSA::decrypt(const std::string& message, bool compressedAsciiInput) 
     return decrypted;
 }
 
-RsaKey RSA::getPrivateKey() { return privateKey; }
+RsaKey RSA::getPrivateKey() const noexcept { return privateKey; }
 
-RsaKey RSA::getPublicKey() { return publicKey; }
+RsaKey RSA::getPublicKey() const noexcept { return publicKey; }
 
 std::string RSA::toAsciiStr(BigInt n) {
     std::stringstream builder;
@@ -672,6 +672,14 @@ bool RSA::importFromFile(const char* filepath, bool importPrivateKey) {
 }
 
 RSA RSA::empty() { return RSA(); }
+
+std::array<BigInt, 2> RSA::getPrimes() const {
+    if (!primes[0] || !primes[1]) {
+        throw std::runtime_error("RSA instance has no primes! Note primes are NOT stored when exporting!");
+    }
+
+    return primes;
+}
 
 #ifdef DEBUG_TESTING
 void RSA::testPrimeDetection(BigInt n) {
