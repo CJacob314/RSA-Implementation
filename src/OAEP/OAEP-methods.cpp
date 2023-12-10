@@ -114,10 +114,14 @@ std::string unpad(const std::string& EM, uint32_t k) {
     */
     static char lHash_Buf[HASH_BYTES];
     static std::string lHash;
-    if (firstCall) {
-        Hashing::hash(lHash_Buf, "", 0);
-        lHash = std::string(lHash_Buf, HASH_BYTES);
-        firstCall = false;
+    static std::mutex mtx; // So that no two threads attempt initialization at the same time.
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        if (firstCall) {
+            Hashing::hash(lHash_Buf, "", 0);
+            lHash = std::string(lHash_Buf, HASH_BYTES);
+            firstCall = false;
+        }
     }
 
     /* Extract the components of <encoded message> = Y || maskedSeed || maskedDB, where Y is a single zero octet,

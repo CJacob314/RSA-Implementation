@@ -294,33 +294,59 @@ std::string RSA::decrypt(const std::string& message, bool compressedAsciiInput) 
         throw std::runtime_error("No private key!");
         return "";
     }
+    std::vector<std::future<void>> futures;
+    std::vector<std::string> chunks;
 
-    std::string decrypted = "";
+    std::string decrypted;
     std::string chunk = "";
 
     // Assemble and decrypt the chunks
-    for (const char& c : message) {
+    for (const char c : message) {
         if (c == '|') {
-            BigInt chunkInt;
-            if (compressedAsciiInput) {
-                chunkInt = fromAsciiCompressedStr(chunk);
-            } else
-                BigInt chunkInt = fromAsciiStr(chunk);
-
-            BigInt decryptedChunk = boost::multiprecision::powm(chunkInt, privateKey, publicKey);
-
-            std::vector<unsigned char> beforeUnpadVec;
-            export_bits(decryptedChunk, std::back_inserter(beforeUnpadVec), 8);
-            std::string beforeUnpad(beforeUnpadVec.begin(), beforeUnpadVec.end());
-            std::string unpadded = OAEP::unpad(beforeUnpad, pubKeyBytes - 1);
-
-            decrypted += unpadded;
+            chunks.push_back(chunk);
             chunk = "";
         } else {
             chunk += c;
         }
     }
 
+    StringAssembler _asm(chunks.size()); // Initialize my thread-safe string assembler (only the StringAssembler::insertString method is thread-safe, by the way)
+    futures.resize(chunks.size()); // Make room for coming loop
+    size_t chunkIdx = 0;
+    for(auto& f : futures){
+        // Assign by ref so that the std::future destructor is NOT called (a blocking call which waits for the thread to exit) until RSA::decrypt returns.
+        f = std::async((chunkIdx < Num_Prime_Search_Threads ? std::launch::async : std::launch::deferred), // Launch in a new thread if we have not yet reached one under the max number of threads.
+            // Lambda for chunk decryption.
+            [&_asm, chunkIdx, this, compressedAsciiInput](const std::string chunk){
+                BigInt chunkInt;
+                if (compressedAsciiInput) {
+                    chunkInt = fromAsciiCompressedStr(chunk);
+                } else {
+                    BigInt chunkInt = fromAsciiStr(chunk);
+                }
+
+                BigInt decryptedChunk = boost::multiprecision::powm(chunkInt, privateKey, publicKey);
+
+                std::vector<unsigned char> beforeUnpadVec;
+                export_bits(decryptedChunk, std::back_inserter(beforeUnpadVec), 8);
+                std::string beforeUnpad(beforeUnpadVec.begin(), beforeUnpadVec.end());
+                std::string unpadded = OAEP::unpad(beforeUnpad, pubKeyBytes - 1);
+
+                _asm.insertString(chunkIdx, unpadded);
+                return;
+            }, 
+        chunks[chunkIdx++]);
+    }
+
+    // Wait for all chunks to be decrypted.
+    for(auto& f : futures){
+        f.get();
+    }
+
+    // Assemble decrypted string
+    decrypted = _asm.assembleFinalString();
+
+    // The following could also be multithreaded, but it's not worth it yet for me since it only adds one serial decryption.
     // In case string does not terminate with '|'
     if (!chunk.empty()) {
         BigInt chunkInt;
@@ -433,7 +459,7 @@ BigInt RSA::fromAsciiStr(const std::string& str) {
     BigInt result = 0;
     uint64_t shift = 0;
 
-    for (const char& c : str) {
+    for (const char c : str) {
         result |= (BigInt(c - 'J') << shift);
         shift += 4;
     }

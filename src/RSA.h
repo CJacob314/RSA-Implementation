@@ -21,6 +21,7 @@
 #include <thread>       // For multithreading
 #include <emscripten.h>
 
+#include "StringAssembler.h" // For multithreading the chunked encryption&decryption specifically
 
 typedef boost::multiprecision::cpp_int BigInt;
 using namespace emscripten;

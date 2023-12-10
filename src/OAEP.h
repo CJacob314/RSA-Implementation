@@ -5,6 +5,7 @@
 #include <stdexcept>
 #include <iostream>
 #include <random>
+#include <mutex>
 #include <arpa/inet.h>
 
 #ifdef DEBUG_TESTING
