@@ -8,7 +8,9 @@
 #include <memory>
 #include <random>
 #include <string>
+#include <cstring>
 #include <vector>
+#include <fstream>
 
 #include "src/OAEP.h"
 #include "src/RSA.h"
@@ -30,10 +32,80 @@ constexpr inline uint32_t operator"" _(char const* p, size_t s) { return hash(p,
 
 int main(int argc, char* argv[]) {
     if (argc > 1) {
-        // TODO: Implement command line arguments
-        std::cout << "Command line arguments not supported yet.\n"
-                     "Running prompt loop as a fallback...\n";
+        if(argv[1] == strstr(argv[1], "--encrypt")){
+            if(argc < 3){
+                std::cerr << "Usage: " << argv[0] << " --encrypt <keyfile> [plaintext, or give to stdin]\n";
+                return 1;
+            }
 
+            std::string keyfile = argv[2], plaintext;
+            if(argc > 3){
+                // We have plaintext to encrypt from argv.
+                plaintext = argv[3];
+            } else {
+                std::istreambuf_iterator<char> in_begin(std::cin), in_end;
+                plaintext = std::string(in_begin, in_end);
+            }
+
+            std::optional<RSA> rsa = RSA::buildFromKeyFile(keyfile.c_str(), false);
+            if(!rsa){
+                std::cerr << "Failed to load public key from file \"" << keyfile << "\"\n";
+                return 1;
+            }
+
+            std::string ciphertext;
+            try {
+                if(!strncmp(argv[1] + 9, "-old", 4)){
+                    ciphertext = rsa->encrypt(plaintext, false);
+                } else {
+                    ciphertext = rsa->encrypt(plaintext, true);
+                }
+            } catch (std::runtime_error& e) {
+                std::cerr << std::string("Caught ") + e.what() + " while encrypting plaintext.\n";
+                return 1;
+            }
+
+            std::cout << ciphertext << std::flush;
+            return 0;
+        } else if(!strncmp(argv[1], "--decrypt", 9)){
+            if(argc < 3){
+                std::cerr << "Usage: " << argv[0] << " --decrypt <keyfile> [ciphertext file, or give directly to stdin]\n";
+                return 1;
+            }
+
+            std::string keyfile = argv[2], ciphertext;
+            if(argc > 3){
+                // We have ciphertext from a file. First, open ifstream
+                std::ifstream in(argv[3]);
+                if(!in){
+                    std::cerr << "Failed to open ciphertext file \"" << argv[3] << "\"\n";
+                    return 1;
+                }
+
+                std::istreambuf_iterator<char> in_begin(in), in_end;
+                ciphertext = std::string(in_begin, in_end);
+            } else {
+                std::istreambuf_iterator<char> in_begin(std::cin), in_end;
+                ciphertext = std::string(in_begin, in_end);
+            }
+
+            std::optional<RSA> rsa = RSA::buildFromKeyFile(keyfile.c_str(), true);
+            if(!rsa){
+                std::cerr << "Failed to load private key from file \"" << keyfile << "\"\n";
+                return 1;
+            }
+
+            std::string decrypted = "";
+            try {
+                decrypted = rsa->decrypt(ciphertext, true);
+            } catch (std::runtime_error& e) {
+                std::cerr << std::string("Caught ") + e.what() + " while decrypting ciphertext.\n";
+                return 1;
+            }
+
+            std::cout << decrypted << std::flush;
+            return 0;
+        }
         return promptLoop();
     } else {
         // If no args are provided, run interactive prompt loop
@@ -44,7 +116,7 @@ int main(int argc, char* argv[]) {
 int promptLoop() {
     // Bind SIGINT handler
     signal(SIGINT, [](int sig) {
-        std::cout << "\nCaught SIGINT. Exiting...\n";
+        std::cout << "\nCaught SIGINT(" << sig << "). Exiting...\n";
         exit(0);
     });
 
@@ -225,7 +297,7 @@ int promptLoop() {
         }
         case "clear"_:
         case "c"_:
-            std::cout << "\e[2J\e[1;1H";
+            std::cout << "\033[2J\033[1;1H";
             break;
         case "store"_:
         case "s"_: {
@@ -332,8 +404,8 @@ int promptLoop() {
             signedMessage += line;
 
             std::cout << "\n\n"
-                      << (rsa->verify(signedMessage) ? "\e[1;32mMessage verified successfully!\e[0m\n"
-                                                     : "\e[1;31mMessage verification failed!\e[0m\n");
+                      << (rsa->verify(signedMessage) ? "\033[1;32mMessage verified successfully!\033[0m\n"
+                                                     : "\033[1;31mMessage verification failed!\033[0m\n");
             break;
         }
         default:

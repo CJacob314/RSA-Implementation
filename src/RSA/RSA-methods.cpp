@@ -197,10 +197,13 @@ BigInt RSA::fromAsciiCompressedStr(const std::string& ascii) {
     return result;
 }
 
-std::string RSA::encrypt(const char* message, uint64_t length, bool compressedAsciiOutput) {
+std::string RSA::encrypt(const std::string& msg, bool compressedAsciiOutput) {
     static const char* P = OAEP_ENCODING_PARAM;
     static const uint32_t pLen = 32;
-    static const uint32_t maxMsgLen = (pubKeyBytes - 1) - (2 * HASH_BYTES) - 1;
+    const uint32_t maxMsgLen = (pubKeyBytes - 1) - (2 * HASH_BYTES) - 3;
+
+    const char* message = msg.c_str();
+    uint64_t length = msg.size();
 
     if (!publicKey) {
         throw std::runtime_error("No public key!");
@@ -208,18 +211,19 @@ std::string RSA::encrypt(const char* message, uint64_t length, bool compressedAs
     }
 
     if (length > maxMsgLen) { // Chunking needed for OAEP::pad to work!
-        uint64_t chunkSize = maxMsgLen - 2;
-        uint64_t strChunkCharCnt = (chunkSize < 8) ? 1 : chunkSize >> 3;
-        uint64_t strChunkCnt = length / strChunkCharCnt + 1;
+        uint64_t strChunkCharCnt = maxMsgLen;
+        uint64_t strChunkCnt = length / strChunkCharCnt;
+        if (length % strChunkCharCnt) {
+            strChunkCnt++;
+        }
 
         std::string encStr = "";
         for (uint64_t i = 0; i < strChunkCnt; i++) {
-            std::string toPad =
-                std::string(message + (i * strChunkCharCnt)).substr(0, std::min(strChunkCharCnt, length - (i * strChunkCharCnt)));
+            std::string toPad = std::string(message + (i * strChunkCharCnt), std::min(strChunkCharCnt, length - (i * strChunkCharCnt)));
 
             std::string padded;
             try {
-                padded = OAEP::pad(toPad, pLen, P, pubKeyBytes - 1);
+                padded = OAEP::pad(toPad, pubKeyBytes - 1);
             } catch (std::runtime_error& e) {
                 throw e;
                 return "";
@@ -230,20 +234,22 @@ std::string RSA::encrypt(const char* message, uint64_t length, bool compressedAs
             import_bits(converted, paddedVec.begin(), paddedVec.end());
 
             // Truncate padded to std::min(strChunkCharCnt, length - (i * strChunkCharCnt)) length
-            padded = padded.substr(0, std::min(strChunkCharCnt, length - (i * strChunkCharCnt)));
+            // padded = padded.substr(0, std::min(strChunkCharCnt, length - (i * strChunkCharCnt)));
             BigInt chunkEncrypted = boost::multiprecision::powm(converted, e, publicKey);
+
             if (compressedAsciiOutput) {
                 encStr += toAsciiCompressedStr(chunkEncrypted) + "|";
-            } else
+            } else {
                 encStr += toAsciiStr(chunkEncrypted) + "|";
+            }
         }
 
         return encStr;
     }
-
     std::string padded;
+    std::cout << "Calling OAEP::pad with message length: " << length << "\n";
     try {
-        padded = OAEP::pad(message, pLen, P, pubKeyBytes - 1);
+        padded = OAEP::pad(std::string(message, length), pubKeyBytes - 1);
     } catch (std::runtime_error& e) {
         throw e;
         return "";
@@ -253,14 +259,13 @@ std::string RSA::encrypt(const char* message, uint64_t length, bool compressedAs
     import_bits(converted, paddedVec.begin(), paddedVec.end());
 
     BigInt encrypted = boost::multiprecision::powm(converted, e, publicKey);
+
     if (compressedAsciiOutput) {
         return toAsciiCompressedStr(encrypted);
-    } else
-        return toAsciiStr(encrypted);
-}
+    }
 
-std::string RSA::encrypt(const std::string& message, bool compressedAsciiOutput) {
-    return encrypt(message.c_str(), message.length(), compressedAsciiOutput);
+    // Otherwise, return large (not base64-style) ASCII string
+    return toAsciiStr(encrypted);
 }
 
 std::string RSA::decrypt(const std::string& message, bool compressedAsciiInput) {
@@ -269,30 +274,57 @@ std::string RSA::decrypt(const std::string& message, bool compressedAsciiInput) 
         return "";
     }
 
+    std::vector<std::future<void>> futures;
+    std::vector<std::string> chunks;
+
     std::string decrypted = "";
     std::string chunk = "";
 
     // Assemble and decrypt the chunks
     for (const char& c : message) {
         if (c == '|') {
-            BigInt chunkInt;
-            if (compressedAsciiInput) {
-                chunkInt = fromAsciiCompressedStr(chunk);
-            } else
-                BigInt chunkInt = fromAsciiStr(chunk);
-
-            BigInt decryptedChunk = boost::multiprecision::powm(chunkInt, privateKey, publicKey);
-            // decrypted += bigIntToString(decryptedChunk); // Append decrypted chunk
-
-            std::vector<unsigned char> beforeUnpadVec;
-            export_bits(decryptedChunk, std::back_inserter(beforeUnpadVec), 8);
-            std::string beforeUnpad(beforeUnpadVec.begin(), beforeUnpadVec.end());
-            decrypted += OAEP::unpad(beforeUnpad, 32, OAEP_ENCODING_PARAM);
+            chunks.push_back(chunk);
             chunk = "";
         } else {
             chunk += c;
         }
     }
+
+    StringAssembler _asm(chunks.size()); // Initialize my thread-safe string assembler (only the StringAssembler::insertString method is thread-safe, by the way)
+    futures.resize(chunks.size()); // Make room for coming loop
+    size_t chunkIdx = 0;
+    for(auto& f : futures){
+        // Assign by ref so that the std::future destructor is NOT called (a blocking call which waits for the thread to exit) until RSA::decrypt returns.
+        f = std::async((chunkIdx < Num_Prime_Search_Threads ? std::launch::async : std::launch::deferred), // Launch in a new thread if we have not yet reached one under the max number of threads.
+            // Lambda for chunk decryption.
+            [&_asm, chunkIdx, this, compressedAsciiInput](const std::string chunk){
+                BigInt chunkInt;
+                if (compressedAsciiInput) {
+                    chunkInt = fromAsciiCompressedStr(chunk);
+                } else
+                    BigInt chunkInt = fromAsciiStr(chunk);
+
+                BigInt decryptedChunk = boost::multiprecision::powm(chunkInt, privateKey, publicKey);
+                // decrypted += bigIntToString(decryptedChunk); // Append decrypted chunk
+
+                std::vector<unsigned char> beforeUnpadVec;
+                export_bits(decryptedChunk, std::back_inserter(beforeUnpadVec), 8);
+                std::string beforeUnpad(beforeUnpadVec.begin(), beforeUnpadVec.end());
+                std::string unpadded = OAEP::unpad(beforeUnpad, pubKeyBytes - 1);;
+
+                _asm.insertString(chunkIdx, unpadded);
+                return;
+            }, 
+        chunks[chunkIdx]);
+        ++chunkIdx; // Doing separately here as chunkIdx is captured in the above lambda.
+    }
+
+    // Wait for all chunks to be decrypted.
+    for(auto& f : futures){
+        f.get();
+    }
+
+    decrypted = _asm.assembleFinalString(); // Assemble decrypted string
 
     // In case string does not terminate with '|'
     if (!chunk.empty()) {
@@ -308,7 +340,7 @@ std::string RSA::decrypt(const std::string& message, bool compressedAsciiInput) 
         export_bits(decryptedChunk, std::back_inserter(beforeUnpadVec), 8);
         std::string beforeUnpad(beforeUnpadVec.begin(), beforeUnpadVec.end());
 
-        decrypted += OAEP::unpad(beforeUnpad, 32, OAEP_ENCODING_PARAM);
+        decrypted += OAEP::unpad(beforeUnpad, pubKeyBytes - 1);
     }
 
     return decrypted;

@@ -19,6 +19,8 @@
 #include <thread>       // For multithreading
 #include <sys/random.h> // For cryptographically secure random numbers
 
+#include "StringAssembler.h"
+
 typedef boost::multiprecision::cpp_int BigInt;
 typedef BigInt RsaKey;
 
@@ -79,7 +81,6 @@ class RSA {
     // ! operator will return true if and only if the RSA object is invalid/empty
     bool operator!();
 
-    std::string encrypt(const char* message, uint64_t length, bool compressedAsciiOutput = false);
     std::string encrypt(const std::string& message, bool compressedAsciiOutput = false);
     std::string decrypt(const std::string& message, bool compressedAsciiInput = false);
     std::string sign(const std::string& message);

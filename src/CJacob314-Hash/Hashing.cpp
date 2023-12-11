@@ -4,12 +4,11 @@ namespace Hashing {
 
 namespace { // Anonymous namespace to hide these variables and functions from the end-user
 
-unsigned char state[STATE_BUF_LEN];
 uint8_t COMPRESSION_SHIFTS[5] = {5, 3, 5, 3, 5};
 
 uint8_t stateDefault[STATE_BUF_LEN] = {0xBA, 0x23, 0x8C, 0x4E, 0x38, 0x4D, 0xC1, 0xCA, 0xA1, 0xA4, 0x78, 0xFF, 0x5F, 0xCE, 0xF7};
 
-void clearState() { memcpy((void*)state, (const void*)&stateDefault, STATE_BUF_LEN); }
+static void clearState(unsigned char* state) { memcpy((void*)state, (const void*)&stateDefault, STATE_BUF_LEN); }
 
 unsigned char* padInput(const char* input, const uint32_t length, uint32_t& newLength, bool& padded) {
     uint32_t paddedLength = 512 - (length % 512);
@@ -32,7 +31,8 @@ unsigned char* padInput(const char* input, const uint32_t length, uint32_t& newL
 } // namespace
 
 void hash(char output[STATE_BUF_LEN], const char* input, const int length) {
-    clearState();
+    thread_local unsigned char state[STATE_BUF_LEN]; // Only re-initialized on a call from a different thread
+    clearState(state);
 
     uint32_t newLength = 0;
     bool padded;
