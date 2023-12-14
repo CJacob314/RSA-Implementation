@@ -1,5 +1,7 @@
 # The test executable
 test
+# Object files
+*.o
 
 # VSCode Directory
 .vscode

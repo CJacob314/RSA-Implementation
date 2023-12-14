@@ -9,8 +9,13 @@
 #include <random>
 #include <string>
 #include <cstring>
+#include <cstdio>
 #include <vector>
 #include <fstream>
+#include <filesystem>
+#include <cerrno>
+
+#include <unistd.h>
 
 #include "src/OAEP.h"
 #include "src/RSA.h"
@@ -32,9 +37,28 @@ constexpr inline uint32_t operator"" _(char const* p, size_t s) { return hash(p,
 
 int main(int argc, char* argv[]) {
     if (argc > 1) {
-        if(argv[1] == strstr(argv[1], "--encrypt")){
+        auto getTmpFileName = []() -> std::string {
+            std::string tmpDir = std::filesystem::temp_directory_path().string();
+            std::string tmpFile = tmpDir + "/rsa-tmp.XXXXXX";
+            char* tmpFileCStr = new char[tmpFile.size() + 1]{'\0'};
+            std::copy(tmpFile.begin(), tmpFile.end(), tmpFileCStr);
+
+            int fd = mkstemp(tmpFileCStr);
+            if(fd < 0){
+                std::cerr << "Failed to create temporary file. Reason: " << strerror(errno) << "\n";
+                exit(1);
+            }
+
+            close(fd); // Only needed the file name.
+
+            std::string tempFileName(tmpFileCStr);
+            delete[] tmpFileCStr;
+            return tempFileName;
+        };
+
+        if(!strncmp(argv[1], "--encrypt", sizeof("--encrypt") + 1) || !strncmp(argv[1], "-e", sizeof("-e") + 1)){ // +1 for terminator
             if(argc < 3){
-                std::cerr << "Usage: " << argv[0] << " --encrypt <keyfile> [plaintext, or give to stdin]\n";
+                std::cerr << "Usage: " << argv[0] << " " << argv[1] << " <keyfile> [plaintext, or give to stdin]\n";
                 return 1;
             }
 
@@ -67,9 +91,9 @@ int main(int argc, char* argv[]) {
 
             std::cout << ciphertext << std::flush;
             return 0;
-        } else if(!strncmp(argv[1], "--decrypt", 9)){
+        } else if(!strncmp(argv[1], "--decrypt", sizeof("--decrypt") + 1) || !strncmp(argv[1], "-d", sizeof("-d") + 1)){
             if(argc < 3){
-                std::cerr << "Usage: " << argv[0] << " --decrypt <keyfile> [ciphertext file, or give directly to stdin]\n";
+                std::cerr << "Usage: " << argv[0] << " " << argv[1] << " <keyfile> [ciphertext file, or give directly to stdin]\n";
                 return 1;
             }
 
@@ -105,12 +129,66 @@ int main(int argc, char* argv[]) {
 
             std::cout << decrypted << std::flush;
             return 0;
+        } else if(!strncmp(argv[1], "--gen", sizeof("--gen") + 1) || !strncmp(argv[1], "--generate-key", sizeof("--generate-key")) 
+            || !strncmp(argv[1], "-g", sizeof("-g") + 1)){
+            if(argc < 4){
+                std::cerr << "Usage: " << argv[0] << " " << argv[1] << " <keylength (in bits)> <key file path> [--public-only] [--for-web]\n";
+                return 1;
+            }
+
+            uint16_t keyLen;
+            try {
+                keyLen = std::stoi(argv[2]);
+            } catch (std::invalid_argument& e) {
+                std::cerr << "Invalid key length: " << argv[2] << ".\n";
+                return 1;
+            }
+
+            bool publicOnly = false, forWeb = false;
+            for(int i = 4; i < argc; i++){
+                if(!strncmp(argv[i], "--public-only", sizeof("--public-only") + 1)){
+                    publicOnly = true;
+                } else if(!strncmp(argv[i], "--for-web", sizeof("--for-web") + 1)){
+                    forWeb = true;
+                } else {
+                    std::cerr << "Unrecognized option: " << argv[i] << ".\n";
+                    return 1;
+                }
+            }
+
+            std::string keyfile(argv[3]);
+            std::cout << "Running " << keyLen << "-bit RSA keypair generation...\n";
+            RSA rsa(keyLen);
+            std::cout << "Generated " << rsa.getPublicKeyLength() << "-bit keypair. Attempting to save to file: " << keyfile << "\n";
+
+            try {
+                rsa.exportToFile(keyfile.c_str(), !publicOnly, forWeb);
+                std::cout << "Successfully exported keypair to file: " << keyfile << ".\n";
+                return 0;
+            } catch (const std::exception& e){
+                std::cerr << "Failed to export keypair to file: " << keyfile << ". Attempting to export to random temporary file...\n";
+            }
+
+            keyfile = getTmpFileName();
+            std::cout << "\tFile Name: " << keyfile << "\n";
+            try {
+                rsa.exportToFile(keyfile.c_str(), !publicOnly, forWeb);
+                std::cout << "Successfully exported keypair to temporary file: " << keyfile << "\n";
+                return 0;
+            } catch(const std::exception& e){
+                std::cerr << "Failed to export keypair to temporary file: " << keyfile << ". Reason: " << e.what() << "\n";
+                return 1;
+            }
+
+        } else {
+            std::cerr << "Unrecognized option: " << argv[1] << ". Use -h or --help to see available arguments or call with none to enter interactive mode.\n";
         }
-        return promptLoop();
     } else {
         // If no args are provided, run interactive prompt loop
         return promptLoop();
     }
+
+    return 0;
 }
 
 int promptLoop() {

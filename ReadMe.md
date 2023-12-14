@@ -1,7 +1,7 @@
 # This Branch
-This branch is different as I have not used my own implementations for many big integer functions like I did on all other branches. Specifically, I switched over to Boost's implementations for modular exponentiation, modular multiplicative inverse calculation, and the Rabin Miller primality test.
+This branch is different as I have not used my own implementations for many big integer functions like I did on other branches. Specifically, I switched over to Boost's implementations for modular exponentiation, modular multiplicative inverse calculation, and the Rabin Miller primality test.
 
-## My Own Implementation of the RSA Cryptosystem
+## My Implementation of the RSA Cryptosystem
 
 ### Inspired by Professor Looper at [UIC](https://mscs.uic.edu/profiles/nrlooper/), who instructed my amazing Math 215 course.
 
