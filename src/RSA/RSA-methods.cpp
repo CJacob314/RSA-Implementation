@@ -247,7 +247,6 @@ std::string RSA::encrypt(const std::string& msg, bool compressedAsciiOutput) {
         return encStr;
     }
     std::string padded;
-    std::cout << "Calling OAEP::pad with message length: " << length << "\n";
     try {
         padded = OAEP::pad(std::string(message, length), pubKeyBytes - 1);
     } catch (std::runtime_error& e) {
@@ -524,6 +523,34 @@ std::string RSA::getFingerprint() {
     return toAsciiCompressedStr(reinterpret_cast<const uint8_t*>(hash), HASH_BYTES);
 }
 
+bool RSA::testKey(void){
+    if(!publicKey || !privateKey){
+        throw std::runtime_error("RSA::testKey can only be called on an object with both private and public keys!");
+    }
+
+    uint8_t bytes[64];
+    ssize_t res = getrandom(bytes, sizeof(bytes), 0); // Using /dev/urandom because "true" randomness is not important here.
+    switch(res){ // Jump table please, compiler
+        case -1:
+            throw std::runtime_error("Could not read from /dev/urandom!");
+            break;
+        case sizeof(bytes):
+            break;
+        default:
+            throw std::runtime_error("Could not read enough bytes from /dev/urandom!");
+            break;
+    }
+    
+    try {
+        std::string plaintext = std::string(reinterpret_cast<const char*>(bytes), sizeof(bytes));
+        std::string encrypted = encrypt(plaintext, false); // Not base64-ish output to stay faster
+        std::string decrypted = decrypt(encrypted, false);
+        return plaintext == decrypted;
+    } catch(const std::exception& e){
+        throw e;
+    }
+}
+
 bool RSA::importFromFile(const char* filepath, bool importPrivateKey) {
     FILE* f = fopen(filepath, "rb+");
 
@@ -604,6 +631,55 @@ bool RSA::importFromFile(const char* filepath, bool importPrivateKey) {
     }
 
     import_bits(this->publicKey, pubKeyVec.begin(), pubKeyVec.end());
+    this->pubKeyBits = boost::multiprecision::msb(publicKey) + 1;
+    this->pubKeyBytes = this->pubKeyBits >> 3;
+
+    return true;
+}
+
+bool RSA::importFromString(const std::string& s, bool importPrivateKey) {
+    const char* fileContents = s.c_str();
+    size_t success = s.size();
+
+    if (importPrivateKey) {
+        const char* privStart;
+
+        if (!(privStart = strstr(fileContents, "----- RSA PRIVATE KEY -----\n"))) {
+            throw std::runtime_error("Could not find private key in file.");
+            return false;
+        }
+
+        privStart += 28;
+
+        char* privEnd = reinterpret_cast<char*>(memmem(reinterpret_cast<const void*>(privStart), success - (privStart - fileContents),
+                                                       reinterpret_cast<const void*>("----- END RSA PRIVATE KEY -----\n"), 32));
+        if (!privEnd) {
+            throw std::runtime_error("Could not find end of private key in file.");
+            return false;
+        }
+
+        // Get an std::string for the private key (for passing to fromAsciiCompressedStr())
+        std::string privKeyStr(privStart, privEnd - privStart);
+        this->privateKey = fromAsciiCompressedStr(privKeyStr);
+    }
+
+    char* pubStart;
+    if (!(pubStart = reinterpret_cast<char*>(memmem(fileContents, success, "----- RSA PUBLIC KEY -----\n", 27)))) {
+        throw std::runtime_error("Could not find public key in file.");
+        return false;
+    }
+
+    pubStart += 27;
+
+    char* pubEnd = reinterpret_cast<char*>(memmem(pubStart, success - (pubStart - fileContents), "----- END RSA PUBLIC KEY -----\n", 31));
+    if (!pubEnd) {
+        throw std::runtime_error("Could not find end of public key in file.");
+        return false;
+    }
+
+    std::string pubKeyStr(pubStart, pubEnd - pubStart);
+
+    this->publicKey = fromAsciiCompressedStr(pubKeyStr);
     this->pubKeyBits = boost::multiprecision::msb(publicKey) + 1;
     this->pubKeyBytes = this->pubKeyBits >> 3;
 

@@ -38,8 +38,8 @@ constexpr inline uint32_t operator"" _(char const* p, size_t s) { return hash(p,
 int main(int argc, char* argv[]) {
     if (argc > 1) {
         auto getTmpFileName = []() -> std::string {
-            std::string tmpDir = std::filesystem::temp_directory_path().string();
-            std::string tmpFile = tmpDir + "/rsa-tmp.XXXXXX";
+            std::filesystem::path tmpDir = std::filesystem::temp_directory_path();
+            std::string tmpFile = (tmpDir / "rsa-tmp.XXXXXX").string(); // std::filesystem::path::operator/() is cool!
             char* tmpFileCStr = new char[tmpFile.size() + 1]{'\0'};
             std::copy(tmpFile.begin(), tmpFile.end(), tmpFileCStr);
 
@@ -87,6 +87,9 @@ int main(int argc, char* argv[]) {
             } catch (std::runtime_error& e) {
                 std::cerr << std::string("Caught ") + e.what() + " while encrypting plaintext.\n";
                 return 1;
+            } catch(...){
+                std::cerr << "PANIC. Failed to encrypt plaintext. Reason: Unknown.\n";
+                return 1;
             }
 
             std::cout << ciphertext << std::flush;
@@ -119,11 +122,63 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
 
+            bool keyValid = false;
+            try {
+                if(rsa->testKey()){
+                    keyValid = true;
+                }
+            } catch(const std::exception& e){
+                std::cerr << "Failed to verify private key file. Reason: " << e.what() << "\n";
+                return 1;
+            } catch(...){
+                std::cerr << "PANIC. Failed to verify private key file. Reason: Unknown.\n";
+                return 1;
+            }
+
+            if(!keyValid){
+                // Try to use RSA::importFromString instead (web-style import), now.
+                std::ifstream in(keyfile);
+                if(!in){
+                    std::cerr << "Failed to open keyfile \"" << keyfile << "\"\n";
+                    return 1;
+                }
+
+                std::istreambuf_iterator<char> in_begin(in), in_end;
+                std::string keyfileContents(in_begin, in_end);
+                
+                try {
+                    rsa->importFromString(keyfileContents, true);
+                } catch(const std::exception& e){
+                    std::cerr << "Failed web-style importing private key from file. Reason: " << e.what() << "\n";
+                    return 1;
+                } catch(...){
+                    std::cerr << "PANIC. Failed to import private key from file. Reason: Unknown.\n";
+                    return 1;
+                }
+
+                // One last ::testKey() call to check
+                try {
+                    if(!rsa->testKey()){
+                        std::cerr << "Invalid private key file. Exiting...\n";
+                        return 1;
+                    }
+                } catch(const std::exception& e){
+                    std::cerr << "Failed to verify private key file. Reason: " << e.what() << "\n";
+                    return 1;
+                } catch(...){
+                    std::cerr << "PANIC. Failed to verify private key file. Reason: Unknown.\n";
+                    return 1;
+                }
+            }
+
             std::string decrypted = "";
             try {
                 decrypted = rsa->decrypt(ciphertext, true);
             } catch (std::runtime_error& e) {
                 std::cerr << std::string("Caught ") + e.what() + " while decrypting ciphertext.\n";
+                return 1;
+            } catch(...){
+                std::cerr << "PANIC. Failed to decrypt ciphertext. Reason: Unknown.\n";
                 return 1;
             }
 
@@ -141,6 +196,9 @@ int main(int argc, char* argv[]) {
                 keyLen = std::stoi(argv[2]);
             } catch (std::invalid_argument& e) {
                 std::cerr << "Invalid key length: " << argv[2] << ".\n";
+                return 1;
+            } catch (...) {
+                std::cerr << "PANIC. Failed to parse key length: " << argv[2] << ". Reason: Unknown.\n";
                 return 1;
             }
 
@@ -167,6 +225,9 @@ int main(int argc, char* argv[]) {
                 return 0;
             } catch (const std::exception& e){
                 std::cerr << "Failed to export keypair to file: " << keyfile << ". Attempting to export to random temporary file...\n";
+            } catch (...){
+                std::cerr << "PANIC. Failed to export keypair to file: " << keyfile << ". Reason: Unknown. Attempting to export to random temporary file...\n";
+                return 1;
             }
 
             keyfile = getTmpFileName();
@@ -178,8 +239,51 @@ int main(int argc, char* argv[]) {
             } catch(const std::exception& e){
                 std::cerr << "Failed to export keypair to temporary file: " << keyfile << ". Reason: " << e.what() << "\n";
                 return 1;
+            } catch(...){
+                std::cerr << "PANIC. Failed to export keypair to temporary file: " << keyfile << ". Reason: Unknown.\n";
+                return 1;
+            }
+        } else if(!strncmp(argv[1], "--verify-msg", sizeof("--verify-msg") + 1) || !strncmp(argv[1], "--verify", sizeof("--verify") + 1)
+            || !strncmp(argv[1], "-v", sizeof("-v") + 1) || !strncmp(argv[1], "--verify-message", sizeof("--verify-message") + 1)){
+            if(argc < 3){
+                std::cerr << "Usage: " << argv[0] << " " << argv[1] << " <keyfile> [signed message file, or give directly to stdin]\n";
+                return 1;
             }
 
+            std::string keyfile(argv[2]), signedMessage;
+            if(argc > 3){
+                // We have ciphertext from a file. First, open ifstream
+                std::ifstream in(argv[3]);
+                if(!in){
+                    std::cerr << "Failed to open ciphertext file \"" << argv[3] << "\"\n";
+                    return 1;
+                }
+
+                std::istreambuf_iterator<char> in_begin(in), in_end;
+                signedMessage = std::string(in_begin, in_end);
+            } else {
+                std::istreambuf_iterator<char> in_begin(std::cin), in_end;
+                signedMessage = std::string(in_begin, in_end);
+            }
+
+            std::optional<RSA> rsa = RSA::buildFromKeyFile(keyfile.c_str(), true);
+            if(!rsa){
+                std::cerr << "Failed to load private key from file \"" << keyfile << "\"\n";
+                return 1;
+            }
+
+            try {
+                std::cout << (rsa->verify(signedMessage) ? "\033[1;32mMessage verified successfully!\033[0m\n"
+                                                         : "\033[1;31mMessage verification failed!\033[0m\n");
+            } catch(const std::exception& e){
+                std::cerr << "\033[1;31mFailed to verify message.\033[0m Reason: " << e.what() << "\n\n";
+                return 1;
+            } catch(...){
+                std::cerr << "PANIC. Failed to verify message. Reason: Unknown.\n";
+                return 1;
+            }
+
+            return 0;
         } else {
             std::cerr << "Unrecognized option: " << argv[1] << ". Use -h or --help to see available arguments or call with none to enter interactive mode.\n";
         }

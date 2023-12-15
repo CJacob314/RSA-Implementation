@@ -86,9 +86,11 @@ class RSA {
     std::string sign(const std::string& message);
     bool verify(const std::string& signedMessage);
     std::string getFingerprint();
+    bool testKey(void); // Returns true iff the private key was able to decrypt 64 random bytes the public key encrypted.
 
     bool exportToFile(const char* filepath, bool exportPrivateKey = false, bool forWebVersion = false);
     bool importFromFile(const char* filepath, bool importPrivateKey = false);
+    bool importFromString(const std::string& s, bool importPrivateKey = false);
 
     RsaKey getPrivateKey();
     RsaKey getPublicKey();
