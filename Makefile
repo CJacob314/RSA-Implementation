@@ -5,7 +5,7 @@ EXEC = test
 DEPS = -pthread -lboost_random -lboost_system
 SHARED_FLAGS = -std=c++17 -Wall -Wpedantic -Wextra
 
-OPTLEVEL ?= -O3
+OPTLEVEL ?= -O3 -flto=auto
 # Call make with make NOOPT to disable most optimizations
 ifdef NOOPT
 OPTLEVEL := -O0
